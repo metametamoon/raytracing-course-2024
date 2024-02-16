@@ -126,7 +126,8 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                 ))
             }
             _ => {
-                panic!("Unexpected command: {}", tokens[0])
+                // ignore unknown command
+                // panic!("Unexpected command: {}", tokens[0])
             }
         }
     }
