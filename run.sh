@@ -1,2 +1,2 @@
 #!/bin/bash
-cargo run -- $1 $2
+./target/release/task1-rust $1 $2
