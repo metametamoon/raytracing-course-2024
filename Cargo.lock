@@ -370,6 +370,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "raytracing-engine"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "nalgebra",
+]
+
+[[package]]
 name = "safe_arch"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -427,14 +435,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "task1-rust"
-version = "0.1.0"
-dependencies = [
- "image",
- "nalgebra",
 ]
 
 [[package]]

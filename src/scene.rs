@@ -11,11 +11,31 @@ pub enum Shape3D {
 }
 
 #[derive(Clone, Debug)]
+pub enum Material {
+    Dielectric,
+    Metallic,
+    Diffused,
+}
+
+#[derive(Clone, Debug)]
 pub struct Primitive {
     pub shape: Shape3D,
     pub color: Vec3f,
     pub position: Vec3f,
     pub rotation: UnitQuaternion<f32>,
+    pub material: Material,
+}
+
+#[derive(Clone, Debug)]
+pub enum LightLocation {
+    Directed { direction: Vec3f },
+    Point { position: Vec3f, attenuation: Vec3f },
+}
+
+#[derive(Clone, Debug)]
+pub struct LightSource {
+    pub light_intensity: Vec3f,
+    pub location: LightLocation,
 }
 
 #[derive(Debug)]
@@ -30,6 +50,9 @@ pub struct Scene {
     pub camera_fov_x: f32,
     pub camera_fov_y: f32,
     pub primitives: Vec<Primitive>,
+    pub lights: Vec<LightSource>,
+    pub ray_depth: i32,
+    pub ambient_light: Vec3f,
 }
 
 pub fn parse_file_content(content: Vec<&str>) -> Scene {
@@ -44,6 +67,9 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         camera_fov_x: 0.0,
         camera_fov_y: 0.0,
         primitives: vec![],
+        lights: vec![],
+        ray_depth: 0,
+        ambient_light: Default::default(),
     };
 
     let mut current_primitive = Primitive {
@@ -51,16 +77,26 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         color: Default::default(),
         position: Default::default(),
         rotation: Default::default(),
+        material: Material::Diffused,
     };
+
+    let mut current_light_source = LightSource {
+        light_intensity: Vec3f::default(),
+        location: LightLocation::Directed {
+            direction: Vec3f::default(),
+        },
+    };
+    let mut first_light_sourse = true;
+
     for line in content {
         let tokens: Vec<String> = line.split(' ').map(|x| x.to_string()).collect();
 
         let get_vector = || -> Vec3f {
-            return Vector3::new(
+            Vector3::new(
                 tokens[1].parse().unwrap(),
                 tokens[2].parse().unwrap(),
                 tokens[3].parse().unwrap(),
-            );
+            )
         };
 
         match tokens[0].as_str() {
@@ -94,6 +130,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                     color: Default::default(),
                     position: Default::default(),
                     rotation: Default::default(),
+                    material: Material::Diffused,
                 }
             }
             "PLANE" => current_primitive.shape = Shape3D::Plane { norm: get_vector() },
@@ -125,6 +162,69 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                     tokens[3].parse().unwrap(),
                 ))
             }
+            "NEW_LIGHT" => {
+                if !first_light_sourse {
+                    result.lights.push(current_light_source.clone());
+                }
+                first_light_sourse = false;
+                current_light_source = LightSource {
+                    light_intensity: Vec3f::default(),
+                    location: LightLocation::Directed {
+                        direction: Vec3f::default(),
+                    },
+                };
+            }
+            "LIGHT_DIRECTION" => {
+                current_light_source.location = LightLocation::Directed {
+                    direction: get_vector(),
+                };
+            }
+            "LIGHT_POSITION" => match current_light_source.location {
+                LightLocation::Directed { direction: _ } => {
+                    current_light_source.location = LightLocation::Point {
+                        position: get_vector(),
+                        attenuation: Default::default(),
+                    }
+                }
+                LightLocation::Point {
+                    position: _,
+                    attenuation,
+                } => {
+                    current_light_source.location = LightLocation::Point {
+                        position: get_vector(),
+                        attenuation,
+                    }
+                }
+            },
+            "LIGHT_ATTENUATION" => match current_light_source.location {
+                LightLocation::Directed { direction: _ } => {
+                    current_light_source.location = LightLocation::Point {
+                        position: Default::default(),
+                        attenuation: get_vector(),
+                    }
+                }
+                LightLocation::Point {
+                    position,
+                    attenuation: _,
+                } => {
+                    current_light_source.location = LightLocation::Point {
+                        position,
+                        attenuation: get_vector(),
+                    }
+                }
+            },
+            "LIGHT_INTENSITY" => {
+                current_light_source.light_intensity = get_vector();
+            }
+            "METALLIC" => {
+                current_primitive.material = Material::Metallic;
+            }
+            "DIELECTRIC" => {
+                current_primitive.material = Material::Dielectric;
+            }
+            "RAY_DEPTH" => {
+                result.ray_depth = tokens[1].parse().unwrap();
+            }
             _ => {
                 // ignore unknown command
                 // panic!("Unexpected command: {}", tokens[0])
@@ -132,8 +232,13 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         }
     }
     result.primitives.push(current_primitive.clone());
+    if !first_light_sourse {
+        result.lights.push(current_light_source.clone());
+    }
     result.camera_fov_y =
         ((result.camera_fov_x / 2.).tan() * result.height as f32 / result.width as f32).atan()
             * 2.0;
+
+    println!("{:?}", result);
     result
 }

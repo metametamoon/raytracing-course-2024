@@ -14,14 +14,13 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let file_string = fs::read_to_string(&args[1]).expect("Failed opening file");
     let file_lines = file_string
-        .split("\n")
+        .split('\n')
         .map(|x| x.trim())
         .collect::<Vec<&str>>();
     let scene = parse_file_content(file_lines);
     let rendered_scene = render_scene(&scene);
     println!("bytes: {}", rendered_scene.len());
     let mut out_file = fs::OpenOptions::new()
-        .write(true)
         .append(true)
         .create(true)
         .open(&args[2])
