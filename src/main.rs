@@ -26,9 +26,9 @@ fn main() {
         .open(&args[2])
         .unwrap();
     dump_rendered_to_ppm(&scene, &rendered_scene, &mut out_file);
-    let png_path = format!("{}.png", args[2]);
-    dump_rendered_to_png(&scene, rendered_scene, &png_path);
-    println!("{:?}", scene)
+    // let png_path = format!("{}.png", args[2]);
+    // dump_rendered_to_png(&scene, rendered_scene, &png_path);
+    // println!("{:?}", scene)
 }
 
 fn dump_rendered_to_png(scene: &Scene, rendered_scene: Vec<u8>, png_path: &str) {
