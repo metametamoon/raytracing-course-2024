@@ -344,7 +344,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                     recursion_depth - 1,
                                 )
                             }
-                        };
+                        }.component_mul(&primitive.color);
                         reflection_color * reflected + refracted_color * refracted
                     }
                 } // _ => primitive.color,
