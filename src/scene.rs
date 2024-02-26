@@ -1,13 +1,13 @@
 use na::{Quaternion, UnitQuaternion, Vector3};
 
-pub type Vec3f = Vector3<f32>;
+pub type Vec3f = Vector3<f64>;
 
 #[derive(Clone, Debug)]
 pub enum Shape3D {
     None,
     Plane { norm: Vec3f },
-    Ellipsoid { rx: f32, ry: f32, rz: f32 },
-    Box { sx: f32, sy: f32, sz: f32 },
+    Ellipsoid { rx: f64, ry: f64, rz: f64 },
+    Box { sx: f64, sy: f64, sz: f64 },
 }
 
 #[derive(Clone, Debug)]
@@ -22,9 +22,9 @@ pub struct Primitive {
     pub shape: Shape3D,
     pub color: Vec3f,
     pub position: Vec3f,
-    pub rotation: UnitQuaternion<f32>,
+    pub rotation: UnitQuaternion<f64>,
     pub material: Material,
-    pub ior: f32,
+    pub ior: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -48,8 +48,8 @@ pub struct Scene {
     pub camera_forward: Vec3f,
     pub camera_right: Vec3f,
     pub camera_up: Vec3f,
-    pub camera_fov_x: f32,
-    pub camera_fov_y: f32,
+    pub camera_fov_x: f64,
+    pub camera_fov_y: f64,
     pub primitives: Vec<Primitive>,
     pub lights: Vec<LightSource>,
     pub ray_depth: i32,
@@ -242,7 +242,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         result.lights.push(current_light_source.clone());
     }
     result.camera_fov_y =
-        ((result.camera_fov_x / 2.).tan() * result.height as f32 / result.width as f32).atan()
+        ((result.camera_fov_x / 2.).tan() * result.height as f64 / result.width as f64).atan()
             * 2.0;
 
     println!("{:?}", result);

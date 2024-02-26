@@ -14,12 +14,12 @@ struct Ray {
 
 #[derive(Default, Clone)]
 struct Intersection {
-    pub offset: f32,
+    pub offset: f64,
     pub normal: Vec3f,
     pub is_outer_to_inner: bool,
 }
 
-static EPS: f32 = 0.0001;
+static EPS: f64 = 0.0001;
 
 fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
     match shape {
@@ -33,7 +33,11 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             } else {
                 vec![Intersection {
                     offset: -ray.origin.dot(norm) / x,
-                    normal: norm.normalize(),
+                    normal: if x < 0.0 {
+                        norm.normalize()
+                    } else {
+                        -norm.normalize()
+                    },
                     is_outer_to_inner: true,
                 }]
             }
@@ -49,8 +53,8 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             let x1 = (-b - discr.sqrt()) / (2.0 * a);
             let x2 = (-b + discr.sqrt()) / (2.0 * a);
 
-            let t1 = f32::min(x1, x2);
-            let t2 = f32::max(x1, x2);
+            let t1 = f64::min(x1, x2);
+            let t2 = f64::max(x1, x2);
             let p1 = ray.origin + ray.direction * t1;
             let p2 = ray.origin + ray.direction * t2;
 
@@ -96,15 +100,15 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             ];
             t_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            let t_min = f32::max(t_x[0], f32::max(t_y[0], t_z[0]));
-            let t_max = f32::min(t_x[1], f32::min(t_y[1], t_z[1]));
+            let t_min = f64::max(t_x[0], f64::max(t_y[0], t_z[0]));
+            let t_max = f64::min(t_x[1], f64::min(t_y[1], t_z[1]));
             if t_min < t_max {
                 let p_min = ray.origin + ray.direction * t_min;
                 let p_max = ray.origin + ray.direction * t_max;
                 let s = Vector3::new(*sx, *sy, *sz);
                 let norm_min = {
                     let mut tmp = p_min.component_div(&s);
-                    let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                    let max_coord = f64::max(tmp.x.abs(), f64::max(tmp.y.abs(), tmp.z.abs()));
                     if tmp.x.abs() < max_coord {
                         tmp.x = 0.0
                     }
@@ -128,7 +132,7 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                 };
                 let norm_max = {
                     let mut tmp = p_max.component_div(&s);
-                    let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                    let max_coord = f64::max(tmp.x.abs(), f64::max(tmp.y.abs(), tmp.z.abs()));
                     if tmp.x.abs() < max_coord {
                         tmp.x = 0.0
                     }
@@ -173,7 +177,7 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                     },
                     Intersection {
                         offset: t_max,
-                        normal: norm_max,
+                        normal: -norm_max,
                         is_outer_to_inner: false,
                     },
                 ]
@@ -197,13 +201,13 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
 }
 
 fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
-    let real_x = x as f32 + 0.5;
-    let real_y = y as f32 + 0.5;
-    let w = scene.width as f32;
-    let h = scene.height as f32;
+    let real_x = x as f64 + 0.5;
+    let real_y = y as f64 + 0.5;
+    let w = scene.width as f64;
+    let h = scene.height as f64;
     let px = (2.0 * real_x / w - 1.0) * (scene.camera_fov_x * 0.5).tan();
     let py = -(2.0 * real_y / h - 1.0) * (scene.camera_fov_y * 0.5).tan();
-    let pz = 1.0f32;
+    let pz = 1.0f64;
     let direction = px * scene.camera_right + py * scene.camera_up + pz * scene.camera_forward;
     Ray {
         origin: scene.camera_position,
@@ -223,7 +227,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                     let mut total_color = scene.ambient_light;
                     for light in &scene.lights {
                         let (distance_to_light, dir_on_light_normalized) = match light.location {
-                            LightLocation::Directed { direction } => (f32::INFINITY, direction),
+                            LightLocation::Directed { direction } => (f64::INFINITY, direction),
                             LightLocation::Point {
                                 position,
                                 attenuation: _,
@@ -279,9 +283,9 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                 // _ => primitive.color,
                 Material::Dielectric => {
                     let cosine = -ray.direction.normalize().dot(&intersection.normal);
-                    // if cosine < 0.0 {
-                    //     println!("cos={}", cosine);
-                    // }
+                    if cosine < 0.0 {
+                        println!("cos={}", cosine);
+                    }
                     let cosine = cosine.abs().clamp(0.0, 1.0);
                     assert!(cosine >= 0.0);
                     let (eta1, eta2) = if intersection.is_outer_to_inner {
@@ -406,11 +410,13 @@ fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Inter
                 })
                 .collect::<Vec<(Primitive, Intersection)>>()
         })
-        .filter(|(_, intersection)| intersection.offset >= 0.0)
+        .filter(|(_, intersection)| {
+            intersection.offset >= 0.0 && intersection.offset != f64::INFINITY
+        })
         .min_by(|a, b| a.1.offset.partial_cmp(&b.1.offset).unwrap())
 }
 
-fn saturate(color: Vector3<f32>) -> Vector3<f32> {
+fn saturate(color: Vector3<f64>) -> Vector3<f64> {
     Vec3f::new(
         color.x.clamp(0.0, 1.0),
         color.y.clamp(0.0, 1.0),
