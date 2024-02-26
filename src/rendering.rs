@@ -344,8 +344,12 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                     recursion_depth - 1,
                                 )
                             }
-                        }.component_mul(&primitive.color);
-                        reflection_color * reflected + refracted_color * refracted
+                        };
+                        if intersection.is_outer_to_inner {
+                            reflection_color * reflected + refracted_color.component_mul(&primitive.color) * refracted
+                        } else {
+                            reflection_color * reflected + refracted_color * refracted
+                        }
                     }
                 } // _ => primitive.color,
             }
