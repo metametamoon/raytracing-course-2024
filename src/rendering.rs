@@ -172,12 +172,12 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                 vec![
                     Intersection {
                         offset: t_min,
-                        normal: norm_min,
+                        normal: norm_min.normalize(),
                         is_outer_to_inner: true,
                     },
                     Intersection {
                         offset: t_max,
-                        normal: -norm_max,
+                        normal: -norm_max.normalize(),
                         is_outer_to_inner: false,
                     },
                 ]
@@ -304,7 +304,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                             intersection_point,
                         )
                     } else {
-                        let r0 = (eta1 - eta2) / (eta1 + eta2);
+                        let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                         let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
                         let refracted = 1.0 - reflected;
                         let reflection_color = get_reflection_color(
@@ -346,7 +346,8 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                             }
                         };
                         if intersection.is_outer_to_inner {
-                            reflection_color * reflected + refracted_color.component_mul(&primitive.color) * refracted
+                            reflection_color * reflected
+                                + refracted_color.component_mul(&primitive.color) * refracted
                         } else {
                             reflection_color * reflected + refracted_color * refracted
                         }
@@ -406,7 +407,6 @@ fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Inter
                         primitive.clone(),
                         Intersection {
                             offset: t.offset,
-                            // normal: t.normal,
                             normal: primitive.rotation.transform_vector(&t.normal),
                             is_outer_to_inner: t.is_outer_to_inner,
                         },
