@@ -1,5 +1,7 @@
 use na::{Quaternion, UnitQuaternion, Vector3};
 
+use crate::scene;
+
 pub type Vec3f = Vector3<f64>;
 
 #[derive(Clone, Debug)]
@@ -230,6 +232,9 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
             },
             "IOR" => {
                 current_primitive.ior = tokens[1].parse().unwrap();
+            },
+            "AMBIENT_LIGHT" => {
+                result.ambient_light = get_vector();
             }
             _ => {
                 // ignore unknown command
