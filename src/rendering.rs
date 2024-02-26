@@ -78,111 +78,107 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             }
         }
         Shape3D::Box { sx, sy, sz } => {
-            if ray.direction.x == 0.0 || ray.direction.y == 0.0 || ray.direction.z == 0.0 {
-                panic!("I pray this is unreachable")
+            let mut t_x = [
+                (-sx - ray.origin.x) / ray.direction.x,
+                (sx - ray.origin.x) / ray.direction.x,
+            ];
+            t_x.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let mut t_y = [
+                (-sy - ray.origin.y) / ray.direction.y,
+                (sy - ray.origin.y) / ray.direction.y,
+            ];
+            t_y.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let mut t_z = [
+                (-sz - ray.origin.z) / ray.direction.z,
+                (sz - ray.origin.z) / ray.direction.z,
+            ];
+            t_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let t_min = f32::max(t_x[0], f32::max(t_y[0], t_z[0]));
+            let t_max = f32::min(t_x[1], f32::min(t_y[1], t_z[1]));
+            if t_min < t_max {
+                let p_min = ray.origin + ray.direction * t_min;
+                let p_max = ray.origin + ray.direction * t_max;
+                let s = Vector3::new(*sx, *sy, *sz);
+                let norm_min = {
+                    let mut tmp = p_min.component_div(&s);
+                    let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                    if tmp.x.abs() < max_coord {
+                        tmp.x = 0.0
+                    }
+                    if tmp.y.abs() < max_coord {
+                        tmp.y = 0.0
+                    }
+                    if tmp.z.abs() < max_coord {
+                        tmp.z = 0.0
+                    }
+                    if tmp.norm() < 1.5 {
+                        tmp
+                    } else {
+                        tmp.x = 0.0;
+                        if tmp.norm() < 1.5 {
+                            tmp
+                        } else {
+                            tmp.y = 0.0;
+                            tmp
+                        }
+                    }
+                };
+                let norm_max = {
+                    let mut tmp = p_max.component_div(&s);
+                    let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                    if tmp.x.abs() < max_coord {
+                        tmp.x = 0.0
+                    }
+                    if tmp.y.abs() < max_coord {
+                        tmp.y = 0.0
+                    }
+                    if tmp.z.abs() < max_coord {
+                        tmp.z = 0.0
+                    }
+                    if tmp.norm() < 1.5 {
+                        tmp
+                    } else {
+                        tmp.x = 0.0;
+                        if tmp.norm() < 1.5 {
+                            tmp
+                        } else {
+                            tmp.y = 0.0;
+                            tmp
+                        }
+                    }
+                };
+                // if !(norm_min.norm() + EPS > 1.0) || !(norm_min.norm() - EPS < 1.0) {
+                //     println!(
+                //         "after div: {:?}, before div: {:?}",
+                //         norm_min,
+                //         p_min.component_div(&s)
+                //     );
+                // }
+
+                // if !(norm_max.norm() - EPS < 1.0) || !(norm_max.norm() + EPS > 1.0) {
+                //     println!(
+                //         "after div: {:?}, before div: {:?}",
+                //         norm_max,
+                //         p_max.component_div(&s)
+                //     );
+                // }
+                vec![
+                    Intersection {
+                        offset: t_min,
+                        normal: norm_min,
+                        is_outer_to_inner: true,
+                    },
+                    Intersection {
+                        offset: t_max,
+                        normal: norm_max,
+                        is_outer_to_inner: false,
+                    },
+                ]
             } else {
-                let mut t_x = [
-                    (-sx - ray.origin.x) / ray.direction.x,
-                    (sx - ray.origin.x) / ray.direction.x,
-                ];
-                t_x.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                let mut t_y = [
-                    (-sy - ray.origin.y) / ray.direction.y,
-                    (sy - ray.origin.y) / ray.direction.y,
-                ];
-                t_y.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                let mut t_z = [
-                    (-sz - ray.origin.z) / ray.direction.z,
-                    (sz - ray.origin.z) / ray.direction.z,
-                ];
-                t_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                let t_min = f32::max(t_x[0], f32::max(t_y[0], t_z[0]));
-                let t_max = f32::min(t_x[1], f32::min(t_y[1], t_z[1]));
-                if t_min < t_max {
-                    let p_min = ray.origin + ray.direction * t_min;
-                    let p_max = ray.origin + ray.direction * t_max;
-                    let s = Vector3::new(*sx, *sy, *sz);
-                    let norm_min = {
-                        let mut tmp = p_min.component_div(&s);
-                        let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
-                        if tmp.x.abs() < max_coord {
-                            tmp.x = 0.0
-                        }
-                        if tmp.y.abs() < max_coord {
-                            tmp.y = 0.0
-                        }
-                        if tmp.z.abs() < max_coord {
-                            tmp.z = 0.0
-                        }
-                        if tmp.norm() < 1.0 + EPS {
-                            tmp
-                        } else {
-                            tmp.x = 0.0;
-                            if tmp.norm() < 1.0 + EPS {
-                                tmp
-                            } else {
-                                tmp.y = 0.0;
-                                tmp
-                            }
-                        }
-                    };
-                    let norm_max = {
-                        let mut tmp = p_max.component_div(&s);
-                        let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
-                        if tmp.x.abs() < max_coord {
-                            tmp.x = 0.0
-                        }
-                        if tmp.y.abs() < max_coord {
-                            tmp.y = 0.0
-                        }
-                        if tmp.z.abs() < max_coord {
-                            tmp.z = 0.0
-                        }
-                        if tmp.norm() < 1.0 + EPS {
-                            tmp
-                        } else {
-                            tmp.x = 0.0;
-                            if tmp.norm() < 1.0 + EPS {
-                                tmp
-                            } else {
-                                tmp.y = 0.0;
-                                tmp
-                            }
-                        }
-                    };
-                    if !(norm_min.norm() + EPS > 1.0) || !(norm_min.norm() - EPS < 1.0) {
-                        println!(
-                            "after div: {:?}, before div: {:?}",
-                            norm_min,
-                            p_min.component_div(&s)
-                        );
-                    }
-
-                    if !(norm_max.norm() - EPS < 1.0) || !(norm_max.norm() + EPS > 1.0) {
-                        println!(
-                            "after div: {:?}, before div: {:?}",
-                            norm_max,
-                            p_max.component_div(&s)
-                        );
-                    }
-                    vec![
-                        Intersection {
-                            offset: t_min,
-                            normal: norm_min,
-                            is_outer_to_inner: true,
-                        },
-                        Intersection {
-                            offset: t_max,
-                            normal: norm_max,
-                            is_outer_to_inner: false,
-                        },
-                    ]
-                } else {
-                    vec![]
-                }
+                vec![]
             }
         }
     }
@@ -283,9 +279,9 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                 // _ => primitive.color,
                 Material::Dielectric => {
                     let cosine = -ray.direction.normalize().dot(&intersection.normal);
-                    if cosine < 0.0 {
-                        println!("cos={}", cosine);
-                    }
+                    // if cosine < 0.0 {
+                    //     println!("cos={}", cosine);
+                    // }
                     let cosine = cosine.abs().clamp(0.0, 1.0);
                     assert!(cosine >= 0.0);
                     let (eta1, eta2) = if intersection.is_outer_to_inner {
