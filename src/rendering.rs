@@ -1,9 +1,12 @@
+use crate::scene::LightLocation;
+use crate::scene::Material;
 use crate::scene::Primitive;
 use crate::scene::Scene;
 use crate::scene::Shape3D;
 use crate::scene::Vec3f;
 use na::Vector3;
 
+#[derive(Clone)]
 struct Ray {
     origin: Vec3f,
     direction: Vec3f,
@@ -15,6 +18,8 @@ struct Intersection {
     pub normal: Vec3f,
     pub is_outer_to_inner: bool,
 }
+
+static EPS: f32 = 0.0001;
 
 fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
     match shape {
@@ -28,7 +33,7 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             } else {
                 vec![Intersection {
                     offset: -ray.origin.dot(norm) / x,
-                    normal: *norm,
+                    normal: norm.normalize(),
                     is_outer_to_inner: true,
                 }]
             }
@@ -43,25 +48,28 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
             let discr = b * b - 4.0 * a * c;
             let x1 = (-b - discr.sqrt()) / (2.0 * a);
             let x2 = (-b + discr.sqrt()) / (2.0 * a);
-            let p1 = ray.origin + ray.direction * x1;
-            let p2 = ray.origin + ray.direction * x2;
 
-            let norm1: Vec3f = p1.component_div(&r);
-            let norm1 = norm1.component_div(&r);
+            let t1 = f32::min(x1, x2);
+            let t2 = f32::max(x1, x2);
+            let p1 = ray.origin + ray.direction * t1;
+            let p2 = ray.origin + ray.direction * t2;
 
-            let norm2: Vec3f = p2.component_div(&r);
-            let norm2 = norm2.component_div(&r);
+            let norm1 =
+                Vec3f::new(p1.x / (rx * rx), p1.y / (ry * ry), p1.z / (rz * rz)).normalize();
+
+            let norm2 =
+                Vec3f::new(p2.x / (rx * rx), p2.y / (ry * ry), p2.z / (rz * rz)).normalize();
 
             if discr >= 0.0 {
                 vec![
                     Intersection {
-                        offset: f32::min(x1, x2),
+                        offset: t1,
                         normal: norm1,
                         is_outer_to_inner: true,
                     },
                     Intersection {
-                        offset: f32::max(x1, x2),
-                        normal: norm2,
+                        offset: t2,
+                        normal: -norm2,
                         is_outer_to_inner: false,
                     },
                 ]
@@ -99,30 +107,67 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                     let s = Vector3::new(*sx, *sy, *sz);
                     let norm_min = {
                         let mut tmp = p_min.component_div(&s);
-                        if tmp.x.abs() < 1.0 {
+                        let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                        if tmp.x.abs() < max_coord {
                             tmp.x = 0.0
                         }
-                        if tmp.y.abs() < 1.0 {
+                        if tmp.y.abs() < max_coord {
                             tmp.y = 0.0
                         }
-                        if tmp.z.abs() < 1.0 {
+                        if tmp.z.abs() < max_coord {
                             tmp.z = 0.0
                         }
-                        tmp
+                        if tmp.norm() < 1.0 + EPS {
+                            tmp
+                        } else {
+                            tmp.x = 0.0;
+                            if tmp.norm() < 1.0 + EPS {
+                                tmp
+                            } else {
+                                tmp.y = 0.0;
+                                tmp
+                            }
+                        }
                     };
                     let norm_max = {
                         let mut tmp = p_max.component_div(&s);
-                        if tmp.x.abs() < 1.0 {
+                        let max_coord = f32::max(tmp.x.abs(), f32::max(tmp.y.abs(), tmp.z.abs()));
+                        if tmp.x.abs() < max_coord {
                             tmp.x = 0.0
                         }
-                        if tmp.y.abs() < 1.0 {
+                        if tmp.y.abs() < max_coord {
                             tmp.y = 0.0
                         }
-                        if tmp.z.abs() < 1.0 {
+                        if tmp.z.abs() < max_coord {
                             tmp.z = 0.0
                         }
-                        tmp
+                        if tmp.norm() < 1.0 + EPS {
+                            tmp
+                        } else {
+                            tmp.x = 0.0;
+                            if tmp.norm() < 1.0 + EPS {
+                                tmp
+                            } else {
+                                tmp.y = 0.0;
+                                tmp
+                            }
+                        }
                     };
+                    if !(norm_min.norm() + EPS > 1.0) || !(norm_min.norm() - EPS < 1.0) {
+                        println!(
+                            "after div: {:?}, before div: {:?}",
+                            norm_min,
+                            p_min.component_div(&s)
+                        );
+                    }
+
+                    if !(norm_max.norm() - EPS < 1.0) || !(norm_max.norm() + EPS > 1.0) {
+                        println!(
+                            "after div: {:?}, before div: {:?}",
+                            norm_max,
+                            p_max.component_div(&s)
+                        );
+                    }
                     vec![
                         Intersection {
                             offset: t_min,
@@ -148,10 +193,8 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     for y in 0..scene.height {
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
-            let color = get_ray_color(ray_to_pixel, scene);
-            result.push((color.x * 255.0).round() as u8);
-            result.push((color.y * 255.0).round() as u8);
-            result.push((color.z * 255.0).round() as u8);
+            let color = get_ray_color(ray_to_pixel, scene, scene.ray_depth);
+            result.extend(color_to_pixel(color));
         }
     }
     result
@@ -172,13 +215,164 @@ fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
     }
 }
 
-fn get_ray_color(ray: Ray, scene: &Scene) -> Vec3f {
-    match intersect_ray_with_scene(ray, scene) {
-        Some(intersection) => {
-            intersection.0.color
-        },
+fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
+    if recursion_depth < 0 {
+        return Vec3f::default();
+    }
+    match intersect_ray_with_scene(ray.clone(), scene) {
+        Some((primitive, intersection)) => {
+            let intersection_point = ray.origin + ray.direction * intersection.offset;
+            match primitive.material {
+                Material::Diffused => {
+                    let mut total_color = scene.ambient_light;
+                    for light in &scene.lights {
+                        let (distance_to_light, dir_on_light_normalized) = match light.location {
+                            LightLocation::Directed { direction } => (f32::INFINITY, direction),
+                            LightLocation::Point {
+                                position,
+                                attenuation: _,
+                            } => {
+                                let vec_on_light = position - intersection_point;
+                                (vec_on_light.norm(), vec_on_light.normalize())
+                            }
+                        };
+                        let corrected_point = intersection_point + intersection.normal * EPS;
+                        let attenuation_correction_multiplier = match light.location {
+                            LightLocation::Point {
+                                position: _,
+                                attenuation,
+                            } => {
+                                1.0 / (attenuation.x
+                                    + attenuation.y * distance_to_light
+                                    + attenuation.z * distance_to_light.powi(2))
+                            }
+                            _ => 1.0,
+                        };
+                        let color_from_source_light =
+                            light.light_intensity.component_mul(&primitive.color)
+                                * intersection.normal.dot(&dir_on_light_normalized).abs()
+                                * attenuation_correction_multiplier;
+                        if let Some((_, intersection)) = intersect_ray_with_scene(
+                            Ray {
+                                origin: corrected_point,
+                                direction: dir_on_light_normalized,
+                            },
+                            &scene,
+                        ) {
+                            if intersection.offset > distance_to_light {
+                                total_color += color_from_source_light;
+                            }
+                        } else {
+                            total_color += color_from_source_light;
+                        }
+                    }
+
+                    total_color
+                }
+                Material::Metallic => {
+                    let reflected_direction =
+                        get_reflection_ray(&ray.direction, &intersection.normal);
+                    let corrected_point = intersection_point + intersection.normal * EPS;
+                    let reflection_ray = Ray {
+                        origin: corrected_point,
+                        direction: reflected_direction,
+                    };
+                    get_ray_color(reflection_ray, scene, recursion_depth - 1)
+                        .component_mul(&primitive.color)
+                }
+                // _ => primitive.color,
+                Material::Dielectric => {
+                    let cosine = -ray.direction.normalize().dot(&intersection.normal);
+                    if cosine < 0.0 {
+                        println!("cos={}", cosine);
+                    }
+                    let cosine = cosine.abs().clamp(0.0, 1.0);
+                    assert!(cosine >= 0.0);
+                    let (eta1, eta2) = if intersection.is_outer_to_inner {
+                        (1.0, primitive.ior)
+                    } else {
+                        (primitive.ior, 1.0)
+                    };
+                    let sine = (1.0 - cosine.powi(2)).sqrt();
+                    let sine2 = sine * eta1 / eta2;
+                    if sine2 > 1.0 {
+                        get_reflection_color(
+                            &ray,
+                            scene,
+                            recursion_depth,
+                            &intersection,
+                            intersection_point,
+                        )
+                    } else {
+                        let r0 = (eta1 - eta2) / (eta1 + eta2);
+                        let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
+                        let refracted = 1.0 - reflected;
+                        let reflection_color = get_reflection_color(
+                            &ray,
+                            scene,
+                            recursion_depth,
+                            &intersection,
+                            intersection_point,
+                        );
+                        let refracted_color = {
+                            let outer_norm = -intersection.normal;
+                            let outer_norm = outer_norm * ray.direction.dot(&outer_norm);
+                            let tan2 = sine2 / (1.0 - sine2 * sine2).sqrt();
+                            if (ray.direction - outer_norm).norm() < EPS {
+                                let corrected_point =
+                                    intersection_point - intersection.normal * EPS;
+                                get_ray_color(
+                                    Ray {
+                                        origin: corrected_point,
+                                        direction: ray.direction,
+                                    },
+                                    scene,
+                                    recursion_depth - 1,
+                                )
+                            } else {
+                                let v2 = (ray.direction - outer_norm).normalize();
+                                let norm_len = outer_norm.norm();
+                                let refracted_dir = outer_norm + norm_len * tan2 * v2;
+                                let corrected_point =
+                                    intersection_point - intersection.normal * EPS;
+                                get_ray_color(
+                                    Ray {
+                                        origin: corrected_point,
+                                        direction: refracted_dir,
+                                    },
+                                    scene,
+                                    recursion_depth - 1,
+                                )
+                            }
+                        };
+                        reflection_color * reflected + refracted_color * refracted
+                    }
+                } // _ => primitive.color,
+            }
+        }
         None => scene.bg_color,
     }
+}
+
+fn get_reflection_color(
+    ray: &Ray,
+    scene: &Scene,
+    recursion_depth: i32,
+    intersection: &Intersection,
+    intersection_point: Vec3f,
+) -> Vec3f {
+    let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
+    let corrected_point = intersection_point + intersection.normal * EPS;
+    let reflection_ray = Ray {
+        origin: corrected_point,
+        direction: reflected_direction,
+    };
+    get_ray_color(reflection_ray, scene, recursion_depth - 1)
+}
+
+fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
+    let projection = ray.dot(normal).abs();
+    ray + normal * projection * 2.0
 }
 
 fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Intersection)> {
@@ -203,9 +397,55 @@ fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Inter
 
             intersect(rotated_ray, &primitive.shape)
                 .iter()
-                .map(|t| (primitive.clone(), t.clone()))
+                .map(|t| {
+                    (
+                        primitive.clone(),
+                        Intersection {
+                            offset: t.offset,
+                            // normal: t.normal,
+                            normal: primitive.rotation.transform_vector(&t.normal),
+                            is_outer_to_inner: t.is_outer_to_inner,
+                        },
+                    )
+                })
                 .collect::<Vec<(Primitive, Intersection)>>()
         })
         .filter(|(_, intersection)| intersection.offset >= 0.0)
         .min_by(|a, b| a.1.offset.partial_cmp(&b.1.offset).unwrap())
+}
+
+fn saturate(color: Vector3<f32>) -> Vector3<f32> {
+    Vec3f::new(
+        color.x.clamp(0.0, 1.0),
+        color.y.clamp(0.0, 1.0),
+        color.z.clamp(0.0, 1.0),
+    )
+}
+
+fn aces_tonemap(x: Vec3f) -> Vec3f {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    let unit = Vec3f::new(1.0, 1.0, 1.0);
+
+    saturate(
+        (x.component_mul(&(a * x + b * unit)))
+            .component_div(&(x.component_mul(&(c * x + d * unit)) + e * unit)),
+    )
+}
+
+fn color_to_pixel(color: Vec3f) -> [u8; 3] {
+    let tonemapped = aces_tonemap(color);
+    let gamma_corrected = Vec3f::new(
+        tonemapped.x.powf(1.0 / 2.2),
+        tonemapped.y.powf(1.0 / 2.2),
+        tonemapped.z.powf(1.0 / 2.2),
+    );
+    [
+        (gamma_corrected.x * 255.0).round() as u8,
+        (gamma_corrected.y * 255.0).round() as u8,
+        (gamma_corrected.z * 255.0).round() as u8,
+    ]
 }

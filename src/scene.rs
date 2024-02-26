@@ -24,6 +24,7 @@ pub struct Primitive {
     pub position: Vec3f,
     pub rotation: UnitQuaternion<f32>,
     pub material: Material,
+    pub ior: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +79,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         position: Default::default(),
         rotation: Default::default(),
         material: Material::Diffused,
+        ior: 0.0,
     };
 
     let mut current_light_source = LightSource {
@@ -131,6 +133,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                     position: Default::default(),
                     rotation: Default::default(),
                     material: Material::Diffused,
+                    ior: 0.0,
                 }
             }
             "PLANE" => current_primitive.shape = Shape3D::Plane { norm: get_vector() },
@@ -224,6 +227,9 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
             }
             "RAY_DEPTH" => {
                 result.ray_depth = tokens[1].parse().unwrap();
+            },
+            "IOR" => {
+                current_primitive.ior = tokens[1].parse().unwrap();
             }
             _ => {
                 // ignore unknown command
