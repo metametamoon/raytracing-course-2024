@@ -224,7 +224,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
             let intersection_point = ray.origin + ray.direction * intersection.offset;
             match primitive.material {
                 Material::Diffused => {
-                    let mut total_color = scene.ambient_light;
+                    let mut total_color = scene.ambient_light.component_mul(&primitive.color);
                     for light in &scene.lights {
                         let (distance_to_light, dir_on_light_normalized) = match light.location {
                             LightLocation::Directed { direction } => (f64::INFINITY, direction),
