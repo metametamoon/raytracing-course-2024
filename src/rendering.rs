@@ -216,7 +216,7 @@ fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
 }
 
 fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
-    if recursion_depth < 0 {
+    if recursion_depth <= 0 {
         return Vec3f::default();
     }
     match intersect_ray_with_scene(ray.clone(), scene) {
