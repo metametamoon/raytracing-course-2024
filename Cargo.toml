@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 nalgebra = "0.32.3"
 image = "0.24.8"
+rand = "0.8.5"
+
+
+[profile.release]
+debug = true

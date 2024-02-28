@@ -5,6 +5,7 @@ use crate::scene::Scene;
 use crate::scene::Shape3D;
 use crate::scene::Vec3f;
 use na::Vector3;
+use rand::Rng;
 
 #[derive(Clone)]
 struct Ray {
@@ -191,9 +192,18 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let mut result = Vec::<u8>::new();
     for y in 0..scene.height {
+        // if y % 100 == 0 {
+        //     println!("y={}", y);
+        // }
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
-            let color = get_ray_color(ray_to_pixel, scene, scene.ray_depth);
+            let color = {
+                let mut color = Vec3f::default();
+                for _ in 0..scene.samples {
+                    color += get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth);
+                }
+                color / scene.samples as f64
+            };
             result.extend(color_to_pixel(color));
         }
     }
@@ -224,49 +234,19 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
             let intersection_point = ray.origin + ray.direction * intersection.offset;
             match primitive.material {
                 Material::Diffused => {
-                    let mut total_color = scene.ambient_light.component_mul(&primitive.color);
-                    for light in &scene.lights {
-                        let (distance_to_light, dir_on_light_normalized) = match light.location {
-                            LightLocation::Directed { direction } => (f64::INFINITY, direction),
-                            LightLocation::Point {
-                                position,
-                                attenuation: _,
-                            } => {
-                                let vec_on_light = position - intersection_point;
-                                (vec_on_light.norm(), vec_on_light.normalize())
-                            }
-                        };
-                        let corrected_point = intersection_point + intersection.normal * EPS;
-                        let attenuation_correction_multiplier = match light.location {
-                            LightLocation::Point {
-                                position: _,
-                                attenuation,
-                            } => {
-                                1.0 / (attenuation.x
-                                    + attenuation.y * distance_to_light
-                                    + attenuation.z * distance_to_light.powi(2))
-                            }
-                            _ => 1.0,
-                        };
-                        let color_from_source_light =
-                            light.light_intensity.component_mul(&primitive.color)
-                                * intersection.normal.dot(&dir_on_light_normalized).abs()
-                                * attenuation_correction_multiplier;
-                        if let Some((_, intersection)) = intersect_ray_with_scene(
-                            Ray {
-                                origin: corrected_point,
-                                direction: dir_on_light_normalized,
-                            },
-                            &scene,
-                        ) {
-                            if intersection.offset > distance_to_light {
-                                total_color += color_from_source_light;
-                            }
-                        } else {
-                            total_color += color_from_source_light;
-                        }
-                    }
-
+                    let mut total_color = primitive.emission;
+                    let rnd_vec = random_vector(&intersection.normal);
+                    let color_refl = get_ray_color(
+                        Ray {
+                            origin: intersection_point + EPS * intersection.normal,
+                            direction: rnd_vec,
+                        },
+                        scene,
+                        recursion_depth - 1,
+                    );
+                    total_color += color_refl.component_mul(&primitive.color)
+                        * rnd_vec.dot(&intersection.normal)
+                        * 2.0;
                     total_color
                 }
                 Material::Metallic => {
@@ -306,50 +286,53 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                     } else {
                         let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                         let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                        let refracted = 1.0 - reflected;
-                        let reflection_color = get_reflection_color(
-                            &ray,
-                            scene,
-                            recursion_depth,
-                            &intersection,
-                            intersection_point,
-                        );
-                        let refracted_color = {
-                            let outer_norm = -intersection.normal;
-                            let outer_norm = outer_norm * ray.direction.dot(&outer_norm);
-                            let tan2 = sine2 / (1.0 - sine2 * sine2).sqrt();
-                            if (ray.direction - outer_norm).norm() < EPS {
-                                let corrected_point =
-                                    intersection_point - intersection.normal * EPS;
-                                get_ray_color(
-                                    Ray {
-                                        origin: corrected_point,
-                                        direction: ray.direction,
-                                    },
-                                    scene,
-                                    recursion_depth - 1,
-                                )
-                            } else {
-                                let v2 = (ray.direction - outer_norm).normalize();
-                                let norm_len = outer_norm.norm();
-                                let refracted_dir = outer_norm + norm_len * tan2 * v2;
-                                let corrected_point =
-                                    intersection_point - intersection.normal * EPS;
-                                get_ray_color(
-                                    Ray {
-                                        origin: corrected_point,
-                                        direction: refracted_dir,
-                                    },
-                                    scene,
-                                    recursion_depth - 1,
-                                )
-                            }
-                        };
-                        if intersection.is_outer_to_inner {
-                            reflection_color * reflected
-                                + refracted_color.component_mul(&primitive.color) * refracted
+                        let mut rng = rand::thread_rng();
+                        if rng.gen::<f64>() < reflected {
+                            let reflection_color = get_reflection_color(
+                                &ray,
+                                scene,
+                                recursion_depth,
+                                &intersection,
+                                intersection_point,
+                            );
+                            reflection_color
                         } else {
-                            reflection_color * reflected + refracted_color * refracted
+                            let refracted_color = {
+                                let outer_norm = -intersection.normal;
+                                let outer_norm = outer_norm * ray.direction.dot(&outer_norm);
+                                let tan2 = sine2 / (1.0 - sine2 * sine2).sqrt();
+                                if (ray.direction - outer_norm).norm() < EPS {
+                                    let corrected_point =
+                                        intersection_point - intersection.normal * EPS;
+                                    get_ray_color(
+                                        Ray {
+                                            origin: corrected_point,
+                                            direction: ray.direction,
+                                        },
+                                        scene,
+                                        recursion_depth - 1,
+                                    )
+                                } else {
+                                    let v2 = (ray.direction - outer_norm).normalize();
+                                    let norm_len = outer_norm.norm();
+                                    let refracted_dir = outer_norm + norm_len * tan2 * v2;
+                                    let corrected_point =
+                                        intersection_point - intersection.normal * EPS;
+                                    get_ray_color(
+                                        Ray {
+                                            origin: corrected_point,
+                                            direction: refracted_dir,
+                                        },
+                                        scene,
+                                        recursion_depth - 1,
+                                    )
+                                }
+                            };
+                            if intersection.is_outer_to_inner {
+                                refracted_color.component_mul(&primitive.color)
+                            } else {
+                                refracted_color
+                            }
                         }
                     }
                 } // _ => primitive.color,
@@ -454,4 +437,18 @@ fn color_to_pixel(color: Vec3f) -> [u8; 3] {
         (gamma_corrected.y * 255.0).round() as u8,
         (gamma_corrected.z * 255.0).round() as u8,
     ]
+}
+
+fn random_vector(normal: &Vec3f) -> Vec3f {
+    let mut rng = rand::thread_rng();
+    loop {
+        let v = Vec3f::new(
+            rng.gen_range(-1.0..1.0),
+            rng.gen_range(-1.0..1.0),
+            rng.gen_range(-1.0..1.0),
+        );
+        if v.norm() <= 1.0 && v.dot(&normal) > 0.0 {
+            return v.normalize();
+        }
+    }
 }

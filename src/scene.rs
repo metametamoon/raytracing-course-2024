@@ -27,6 +27,7 @@ pub struct Primitive {
     pub rotation: UnitQuaternion<f64>,
     pub material: Material,
     pub ior: f64,
+    pub emission: Vec3f,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +57,7 @@ pub struct Scene {
     pub lights: Vec<LightSource>,
     pub ray_depth: i32,
     pub ambient_light: Vec3f,
+    pub samples: i32,
 }
 
 pub fn parse_file_content(content: Vec<&str>) -> Scene {
@@ -73,6 +75,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         lights: vec![],
         ray_depth: 0,
         ambient_light: Default::default(),
+        samples: 1,
     };
 
     let mut current_primitive = Primitive {
@@ -82,6 +85,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         rotation: Default::default(),
         material: Material::Diffused,
         ior: 0.0,
+        emission: Default::default(),
     };
 
     let mut current_light_source = LightSource {
@@ -136,6 +140,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                     rotation: Default::default(),
                     material: Material::Diffused,
                     ior: 0.0,
+                    emission: Default::default(),
                 }
             }
             "PLANE" => current_primitive.shape = Shape3D::Plane { norm: get_vector() },
@@ -229,12 +234,18 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
             }
             "RAY_DEPTH" => {
                 result.ray_depth = tokens[1].parse().unwrap();
-            },
+            }
             "IOR" => {
                 current_primitive.ior = tokens[1].parse().unwrap();
-            },
+            }
             "AMBIENT_LIGHT" => {
                 result.ambient_light = get_vector();
+            }
+            "SAMPLES" => {
+                result.samples = tokens[1].parse().unwrap();
+            }
+            "EMISSION" => {
+                current_primitive.emission = get_vector();
             }
             _ => {
                 // ignore unknown command
