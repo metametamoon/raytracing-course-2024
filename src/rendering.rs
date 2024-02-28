@@ -1,13 +1,14 @@
 use std::time::Instant;
 
-use rayon::prelude::*;
 use crate::scene::Material;
 use crate::scene::Primitive;
 use crate::scene::Scene;
 use crate::scene::Shape3D;
 use crate::scene::Vec3f;
+use arrayvec::ArrayVec;
 use na::Vector3;
 use rand::Rng;
+use rayon::prelude::*;
 
 #[derive(Clone)]
 struct Ray {
@@ -24,7 +25,8 @@ struct Intersection {
 
 static EPS: f64 = 0.0001;
 
-fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
+fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
+    let mut result = ArrayVec::<Intersection, 2>::new();
     match shape {
         Shape3D::None => {
             panic!("Intersect with None")
@@ -32,9 +34,9 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
         Shape3D::Plane { norm } => {
             let x = norm.dot(&ray.direction);
             if x == 0.0 {
-                vec![]
+                result
             } else {
-                vec![Intersection {
+                result.push(Intersection {
                     offset: -ray.origin.dot(norm) / x,
                     normal: if x < 0.0 {
                         norm.normalize()
@@ -42,7 +44,8 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                         -norm.normalize()
                     },
                     is_outer_to_inner: true,
-                }]
+                });
+                result
             }
         }
         Shape3D::Ellipsoid { rx, ry, rz } => {
@@ -68,20 +71,19 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                 Vec3f::new(p2.x / (rx * rx), p2.y / (ry * ry), p2.z / (rz * rz)).normalize();
 
             if discr >= 0.0 {
-                vec![
-                    Intersection {
-                        offset: t1,
-                        normal: norm1,
-                        is_outer_to_inner: true,
-                    },
-                    Intersection {
-                        offset: t2,
-                        normal: -norm2,
-                        is_outer_to_inner: false,
-                    },
-                ]
+                result.push(Intersection {
+                    offset: t1,
+                    normal: norm1,
+                    is_outer_to_inner: true,
+                });
+                result.push(Intersection {
+                    offset: t2,
+                    normal: -norm2,
+                    is_outer_to_inner: false,
+                });
+                result
             } else {
-                vec![]
+                result
             }
         }
         Shape3D::Box { sx, sy, sz } => {
@@ -157,20 +159,19 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                         }
                     }
                 };
-                vec![
-                    Intersection {
-                        offset: t_min,
-                        normal: norm_min.normalize(),
-                        is_outer_to_inner: true,
-                    },
-                    Intersection {
-                        offset: t_max,
-                        normal: -norm_max.normalize(),
-                        is_outer_to_inner: false,
-                    },
-                ]
+                result.push(Intersection {
+                    offset: t_min,
+                    normal: norm_min.normalize(),
+                    is_outer_to_inner: true,
+                });
+                result.push(Intersection {
+                    offset: t_max,
+                    normal: -norm_max.normalize(),
+                    is_outer_to_inner: false,
+                });
+                result
             } else {
-                vec![]
+                result
             }
         }
     }

@@ -10,7 +10,8 @@ nalgebra = "0.32.3"
 image = "0.24.8"
 rand = "0.8.5"
 rayon = "1.9.0"
+arrayvec = "0.7.4"
 
 
-#[profile.release]
-#debug = true
+[profile.release]
+debug = true
