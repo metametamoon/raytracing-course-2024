@@ -261,6 +261,5 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         ((result.camera_fov_x / 2.).tan() * result.height as f64 / result.width as f64).atan()
             * 2.0;
 
-    println!("{:?}", result);
     result
 }

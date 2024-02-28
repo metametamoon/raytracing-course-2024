@@ -9,6 +9,7 @@ use image::{ImageFormat, RgbImage};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::time::Instant;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -18,8 +19,10 @@ fn main() {
         .map(|x| x.trim())
         .collect::<Vec<&str>>();
     let scene = parse_file_content(file_lines);
+    let start = Instant::now();
     let rendered_scene = render_scene(&scene);
-    println!("bytes: {}", rendered_scene.len());
+    let duration = start.elapsed();
+    println!("Rendering took {:?}", duration);
     let mut out_file = fs::OpenOptions::new()
         .append(true)
         .create(true)
@@ -29,7 +32,7 @@ fn main() {
     if args.len() >= 4 {
         let png_path = format!("{}.png", args[3]);
         dump_rendered_to_png(&scene, rendered_scene, &png_path);
-        println!("{:?}", scene)
+        println!("Image dumped to {}", png_path);
     }
 }
 

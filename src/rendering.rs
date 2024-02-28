@@ -155,21 +155,6 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
                         }
                     }
                 };
-                // if !(norm_min.norm() + EPS > 1.0) || !(norm_min.norm() - EPS < 1.0) {
-                //     println!(
-                //         "after div: {:?}, before div: {:?}",
-                //         norm_min,
-                //         p_min.component_div(&s)
-                //     );
-                // }
-
-                // if !(norm_max.norm() - EPS < 1.0) || !(norm_max.norm() + EPS > 1.0) {
-                //     println!(
-                //         "after div: {:?}, before div: {:?}",
-                //         norm_max,
-                //         p_max.component_div(&s)
-                //     );
-                // }
                 vec![
                     Intersection {
                         offset: t_min,
