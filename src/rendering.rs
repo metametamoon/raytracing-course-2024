@@ -1,4 +1,6 @@
-use crate::scene::LightLocation;
+use std::time::Instant;
+
+use rayon::prelude::*;
 use crate::scene::Material;
 use crate::scene::Primitive;
 use crate::scene::Scene;
@@ -176,18 +178,19 @@ fn intersect(ray: Ray, shape: &Shape3D) -> Vec<Intersection> {
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let mut result = Vec::<u8>::new();
+    let instant = Instant::now();
     for y in 0..scene.height {
-        // if y % 100 == 0 {
-        //     println!("y={}", y);
-        // }
+        if y % 1 == 0 {
+            println!("y={}; passed {:?}", y, instant.elapsed());
+        }
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
-                let mut color = Vec3f::default();
-                for _ in 0..scene.samples {
-                    color += get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth);
-                }
-                color / scene.samples as f64
+                let total_color = (0..scene.samples)
+                    .into_par_iter()
+                    .map(|_: i32| get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth))
+                    .reduce(|| Vec3f::default(), |x, y| x + y);
+                total_color / scene.samples as f64
             };
             result.extend(color_to_pixel(color));
         }
