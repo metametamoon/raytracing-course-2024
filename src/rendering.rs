@@ -7,6 +7,7 @@ use crate::scene::Shape3D;
 use crate::scene::Vec3f;
 use arrayvec::ArrayVec;
 use na::Vector3;
+use nalgebra::ComplexField;
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -24,9 +25,9 @@ struct Intersection {
 }
 
 static EPS: f64 = 0.0001;
+static PARALLEL: bool = true;
 
-fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
-    let mut result = ArrayVec::<Intersection, 2>::new();
+fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection> {
     match shape {
         Shape3D::None => {
             panic!("Intersect with None")
@@ -34,18 +35,22 @@ fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
         Shape3D::Plane { norm } => {
             let x = norm.dot(&ray.direction);
             if x == 0.0 {
-                result
+                None
             } else {
-                result.push(Intersection {
-                    offset: -ray.origin.dot(norm) / x,
-                    normal: if x < 0.0 {
-                        norm.normalize()
-                    } else {
-                        -norm.normalize()
-                    },
-                    is_outer_to_inner: true,
-                });
-                result
+                let offset = -ray.origin.dot(norm) / x;
+                if 0.0 < offset && offset < upper_bound {
+                    Some(Intersection {
+                        offset,
+                        normal: if x < 0.0 {
+                            norm.normalize()
+                        } else {
+                            -norm.normalize()
+                        },
+                        is_outer_to_inner: true,
+                    })
+                } else {
+                    None
+                }
             }
         }
         Shape3D::Ellipsoid { rx, ry, rz } => {
@@ -56,34 +61,36 @@ fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
             let b = 2.0 * o1.dot(&d1);
             let c = o1.dot(&o1) - 1.0;
             let discr = b * b - 4.0 * a * c;
-            let x1 = (-b - discr.sqrt()) / (2.0 * a);
-            let x2 = (-b + discr.sqrt()) / (2.0 * a);
-
-            let t1 = f64::min(x1, x2);
-            let t2 = f64::max(x1, x2);
-            let p1 = ray.origin + ray.direction * t1;
-            let p2 = ray.origin + ray.direction * t2;
-
-            let norm1 =
-                Vec3f::new(p1.x / (rx * rx), p1.y / (ry * ry), p1.z / (rz * rz)).normalize();
-
-            let norm2 =
-                Vec3f::new(p2.x / (rx * rx), p2.y / (ry * ry), p2.z / (rz * rz)).normalize();
-
-            if discr >= 0.0 {
-                result.push(Intersection {
-                    offset: t1,
-                    normal: norm1,
-                    is_outer_to_inner: true,
-                });
-                result.push(Intersection {
-                    offset: t2,
-                    normal: -norm2,
-                    is_outer_to_inner: false,
-                });
-                result
+            if discr < 0.0 {
+                None
             } else {
-                result
+                let x1 = (-b - discr.sqrt()) / (2.0 * a);
+                let x2 = (-b + discr.sqrt()) / (2.0 * a);
+
+                let t1 = f64::min(x1, x2);
+                let t2 = f64::max(x1, x2);
+                if t1 > 0.0 && t1 < upper_bound {
+                    let p1 = ray.origin + ray.direction * t1;
+                    let norm1 = Vec3f::new(p1.x / (rx * rx), p1.y / (ry * ry), p1.z / (rz * rz))
+                        .normalize();
+                    return Some(Intersection {
+                        offset: t1,
+                        normal: norm1,
+                        is_outer_to_inner: true,
+                    });
+                } else if t2 > 0.0 && t2 < upper_bound {
+                    let p2 = ray.origin + ray.direction * t2;
+
+                    let norm2 = Vec3f::new(p2.x / (rx * rx), p2.y / (ry * ry), p2.z / (rz * rz))
+                        .normalize();
+                    Some(Intersection {
+                        offset: t2,
+                        normal: -norm2,
+                        is_outer_to_inner: false,
+                    })
+                } else {
+                    None
+                }
             }
         }
         Shape3D::Box { sx, sy, sz } => {
@@ -108,70 +115,44 @@ fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
             let t_min = f64::max(t_x[0], f64::max(t_y[0], t_z[0]));
             let t_max = f64::min(t_x[1], f64::min(t_y[1], t_z[1]));
             if t_min < t_max {
-                let p_min = ray.origin + ray.direction * t_min;
-                let p_max = ray.origin + ray.direction * t_max;
                 let s = Vector3::new(*sx, *sy, *sz);
-                let norm_min = {
-                    let mut tmp = p_min.component_div(&s);
-                    let max_coord = f64::max(tmp.x.abs(), f64::max(tmp.y.abs(), tmp.z.abs()));
-                    if tmp.x.abs() < max_coord {
-                        tmp.x = 0.0
-                    }
-                    if tmp.y.abs() < max_coord {
-                        tmp.y = 0.0
-                    }
-                    if tmp.z.abs() < max_coord {
-                        tmp.z = 0.0
-                    }
-                    if tmp.norm() < 1.5 {
-                        tmp
-                    } else {
-                        tmp.x = 0.0;
-                        if tmp.norm() < 1.5 {
-                            tmp
+                if t_min > 0.0 && t_min < upper_bound {
+                    let p_min = ray.origin + ray.direction * t_min;
+                    let norm_min = {
+                        if (p_min.x / s.x).abs() > 1.0 - EPS {
+                            Vec3f::new((p_min.x / s.x).signum(), 0.0, 0.0)
+                        } else if (p_min.y / s.y).abs() > 1.0 - EPS {
+                            Vec3f::new(0.0, (p_min.y / s.y).signum(), 0.0)
                         } else {
-                            tmp.y = 0.0;
-                            tmp
+                            Vec3f::new(0.0, 0.0, (p_min.z / s.z).signum())
                         }
-                    }
-                };
-                let norm_max = {
-                    let mut tmp = p_max.component_div(&s);
-                    let max_coord = f64::max(tmp.x.abs(), f64::max(tmp.y.abs(), tmp.z.abs()));
-                    if tmp.x.abs() < max_coord {
-                        tmp.x = 0.0
-                    }
-                    if tmp.y.abs() < max_coord {
-                        tmp.y = 0.0
-                    }
-                    if tmp.z.abs() < max_coord {
-                        tmp.z = 0.0
-                    }
-                    if tmp.norm() < 1.5 {
-                        tmp
-                    } else {
-                        tmp.x = 0.0;
-                        if tmp.norm() < 1.5 {
-                            tmp
+                    };
+                    Some(Intersection {
+                        offset: t_min,
+                        normal: norm_min,
+                        is_outer_to_inner: true,
+                    })
+                } else if t_max > 0.0 && t_max < upper_bound {
+                    let p_max = ray.origin + ray.direction * t_max;
+                    let norm_max = {
+                        if (p_max.x / s.x).abs() > 1.0 - EPS {
+                            Vec3f::new((p_max.x / s.x).signum(), 0.0, 0.0)
+                        } else if (p_max.y / s.y).abs() > 1.0 - EPS {
+                            Vec3f::new(0.0, (p_max.y / s.y).signum(), 0.0)
                         } else {
-                            tmp.y = 0.0;
-                            tmp
+                            Vec3f::new(0.0, 0.0, (p_max.z / s.z).signum())
                         }
-                    }
-                };
-                result.push(Intersection {
-                    offset: t_min,
-                    normal: norm_min.normalize(),
-                    is_outer_to_inner: true,
-                });
-                result.push(Intersection {
-                    offset: t_max,
-                    normal: -norm_max.normalize(),
-                    is_outer_to_inner: false,
-                });
-                result
+                    };
+                    Some(Intersection {
+                        offset: t_max,
+                        normal: -norm_max.normalize(),
+                        is_outer_to_inner: false,
+                    })
+                } else {
+                    None
+                }
             } else {
-                result
+                None
             }
         }
     }
@@ -179,18 +160,22 @@ fn intersect(ray: Ray, shape: &Shape3D) -> ArrayVec<Intersection, 2> {
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let mut result = Vec::<u8>::new();
-    let instant = Instant::now();
     for y in 0..scene.height {
-        if y % 1 == 0 {
-            println!("y={}; passed {:?}", y, instant.elapsed());
-        }
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
-                let total_color = (0..scene.samples)
+                let total_color = if PARALLEL {
+                    (0..scene.samples)
                     .into_par_iter()
                     .map(|_: i32| get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth))
-                    .reduce(|| Vec3f::default(), |x, y| x + y);
+                    .reduce(|| Vec3f::default(), |x, y| x + y)
+                    
+                } else {
+                    (0..scene.samples)
+                    .map(|_: i32| get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth))
+                    .reduce(|x, y| x + y)
+                    .unwrap()
+                };
                 total_color / scene.samples as f64
             };
             result.extend(color_to_pixel(color));
@@ -352,44 +337,34 @@ fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
     ray + normal * projection * 2.0
 }
 
-fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Intersection)> {
-    scene
-        .primitives
-        .iter()
-        .flat_map(|primitive| {
-            let transposed_ray = Ray {
-                origin: ray.origin - primitive.position,
-                direction: ray.direction,
-            };
-            let rotated_ray = Ray {
-                origin: primitive
-                    .rotation
-                    .conjugate()
-                    .transform_vector(&transposed_ray.origin),
-                direction: primitive
-                    .rotation
-                    .conjugate()
-                    .transform_vector(&transposed_ray.direction),
-            };
 
-            intersect(rotated_ray, &primitive.shape)
-                .iter()
-                .map(|t| {
-                    (
-                        primitive.clone(),
-                        Intersection {
-                            offset: t.offset,
-                            normal: primitive.rotation.transform_vector(&t.normal),
-                            is_outer_to_inner: t.is_outer_to_inner,
-                        },
-                    )
-                })
-                .collect::<Vec<(Primitive, Intersection)>>()
-        })
-        .filter(|(_, intersection)| {
-            intersection.offset >= 0.0 && intersection.offset != f64::INFINITY
-        })
-        .min_by(|a, b| a.1.offset.partial_cmp(&b.1.offset).unwrap())
+fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Intersection)> {
+    let mut min_dist = f64::INFINITY;
+    let mut result = None;
+    for primitive in &scene.primitives {
+        let transposed_ray = Ray {
+            origin: ray.origin - primitive.position,
+            direction: ray.direction,
+        };
+        let rotated_ray = Ray {
+            origin: primitive
+                .rotation
+                .conjugate()
+                .transform_vector(&transposed_ray.origin),
+            direction: primitive
+                .rotation
+                .conjugate()
+                .transform_vector(&transposed_ray.direction),
+        };
+        if let Some(intersection) = intersect(rotated_ray, &primitive.shape, min_dist) {
+            min_dist = intersection.offset;
+            let mut corrected_intersection = intersection;
+            corrected_intersection.normal =
+                primitive.rotation.transform_vector(&corrected_intersection.normal);
+            result = Some((primitive.clone(), corrected_intersection))
+        }
+    }
+    result
 }
 
 fn saturate(color: Vector3<f64>) -> Vector3<f64> {
