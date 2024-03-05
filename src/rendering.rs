@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::time::Instant;
 
 use crate::scene::Material;
@@ -8,7 +9,9 @@ use crate::scene::Vec3f;
 use arrayvec::ArrayVec;
 use na::Vector3;
 use nalgebra::ComplexField;
+use nalgebra::Normed;
 use rand::Rng;
+use rand_distr::{Distribution, Normal};
 use rayon::prelude::*;
 
 #[derive(Clone)]
@@ -25,7 +28,7 @@ struct Intersection {
 }
 
 static EPS: f64 = 0.0001;
-static PARALLEL: bool = true;
+static PARALLEL: bool = false;
 
 fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection> {
     match shape {
@@ -166,15 +169,14 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
             let color = {
                 let total_color = if PARALLEL {
                     (0..scene.samples)
-                    .into_par_iter()
-                    .map(|_: i32| get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth))
-                    .reduce(|| Vec3f::default(), |x, y| x + y)
-                    
+                        .into_par_iter()
+                        .map(|_: i32| get_ray_color(&ray_to_pixel, scene, scene.ray_depth))
+                        .reduce(|| Vec3f::default(), |x, y| x + y)
                 } else {
                     (0..scene.samples)
-                    .map(|_: i32| get_ray_color(ray_to_pixel.clone(), scene, scene.ray_depth))
-                    .reduce(|x, y| x + y)
-                    .unwrap()
+                        .map(|_: i32| get_ray_color(&ray_to_pixel, scene, scene.ray_depth))
+                        .reduce(|x, y| x + y)
+                        .unwrap()
                 };
                 total_color / scene.samples as f64
             };
@@ -199,7 +201,7 @@ fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
     }
 }
 
-fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
+fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
     if recursion_depth <= 0 {
         return Vec3f::default();
     }
@@ -209,9 +211,9 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
             match primitive.material {
                 Material::Diffused => {
                     let mut total_color = primitive.emission;
-                    let rnd_vec = random_vector(&intersection.normal);
+                    let rnd_vec = random_vector_norm(&intersection.normal);
                     let color_refl = get_ray_color(
-                        Ray {
+                        &Ray {
                             origin: intersection_point + EPS * intersection.normal,
                             direction: rnd_vec,
                         },
@@ -231,17 +233,15 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                         origin: corrected_point,
                         direction: reflected_direction,
                     };
-                    get_ray_color(reflection_ray, scene, recursion_depth - 1)
+                    get_ray_color(&reflection_ray, scene, recursion_depth - 1)
                         .component_mul(&primitive.color)
                 }
-                // _ => primitive.color,
                 Material::Dielectric => {
                     let cosine = -ray.direction.normalize().dot(&intersection.normal);
-                    if cosine < 0.0 {
-                        println!("cos={}", cosine);
-                    }
-                    let cosine = cosine.abs().clamp(0.0, 1.0);
-                    assert!(cosine >= 0.0);
+                    // if cosine < 0.0 {
+                    //     println!("cos={}", cosine);
+                    // }
+                    let cosine = f64::min(cosine, 1.0);
                     let (eta1, eta2) = if intersection.is_outer_to_inner {
                         (1.0, primitive.ior)
                     } else {
@@ -260,8 +260,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                     } else {
                         let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                         let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                        let mut rng = rand::thread_rng();
-                        if rng.gen::<f64>() < reflected {
+                        if fastrand::f64() < reflected {
                             let reflection_color = get_reflection_color(
                                 &ray,
                                 scene,
@@ -279,7 +278,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                     let corrected_point =
                                         intersection_point - intersection.normal * EPS;
                                     get_ray_color(
-                                        Ray {
+                                        &Ray {
                                             origin: corrected_point,
                                             direction: ray.direction,
                                         },
@@ -293,7 +292,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                     let corrected_point =
                                         intersection_point - intersection.normal * EPS;
                                     get_ray_color(
-                                        Ray {
+                                        &Ray {
                                             origin: corrected_point,
                                             direction: refracted_dir,
                                         },
@@ -309,7 +308,7 @@ fn get_ray_color(ray: Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                             }
                         }
                     }
-                } // _ => primitive.color,
+                }
             }
         }
         None => scene.bg_color,
@@ -329,16 +328,15 @@ fn get_reflection_color(
         origin: corrected_point,
         direction: reflected_direction,
     };
-    get_ray_color(reflection_ray, scene, recursion_depth - 1)
+    get_ray_color(&reflection_ray, scene, recursion_depth - 1)
 }
 
 fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
-    let projection = ray.dot(normal).abs();
+    let projection = -ray.dot(normal);
     ray + normal * projection * 2.0
 }
 
-
-fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Intersection)> {
+fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(&Primitive, Intersection)> {
     let mut min_dist = f64::INFINITY;
     let mut result = None;
     for primitive in &scene.primitives {
@@ -359,9 +357,10 @@ fn intersect_ray_with_scene(ray: Ray, scene: &Scene) -> Option<(Primitive, Inter
         if let Some(intersection) = intersect(rotated_ray, &primitive.shape, min_dist) {
             min_dist = intersection.offset;
             let mut corrected_intersection = intersection;
-            corrected_intersection.normal =
-                primitive.rotation.transform_vector(&corrected_intersection.normal);
-            result = Some((primitive.clone(), corrected_intersection))
+            corrected_intersection.normal = primitive
+                .rotation
+                .transform_vector(&corrected_intersection.normal);
+            result = Some((primitive, corrected_intersection))
         }
     }
     result
@@ -403,16 +402,52 @@ fn color_to_pixel(color: Vec3f) -> [u8; 3] {
     ]
 }
 
-fn random_vector(normal: &Vec3f) -> Vec3f {
+fn random_vector_norm(normal: &Vec3f) -> Vec3f {
     let mut rng = rand::thread_rng();
+    let normal_distr = Normal::new(0.0, 1.0).unwrap();
+    let result = Vec3f::new(
+        normal_distr.sample(&mut rng),
+        normal_distr.sample(&mut rng),
+        normal_distr.sample(&mut rng),
+    )
+    .normalize();
+    if result.dot(&normal) > 0.0 {
+        result
+    } else {
+        -result
+    }
+}
+
+fn random_vector_loop(normal: &Vec3f) -> Vec3f {
     loop {
         let v = Vec3f::new(
-            rng.gen_range(-1.0..1.0),
-            rng.gen_range(-1.0..1.0),
-            rng.gen_range(-1.0..1.0),
+            fastrand::f64() * 2.0 - 1.0,
+            fastrand::f64() * 2.0 - 1.0,
+            fastrand::f64() * 2.0 - 1.0,
         );
-        if v.norm() <= 1.0 && v.dot(&normal) > 0.0 {
-            return v.normalize();
+        let norm = v.norm();
+        if norm <= 1.0 {
+            let result = v.unscale(norm);
+            if result.dot(&normal) > 0.0 {
+                return result;
+            } else {
+                return -result;
+            }
         }
     }
+}
+
+// the worst ever algo
+fn random_vector_trigonometry(normal: &Vec3f) -> Vec3f {
+    let theta: f64 = (fastrand::f64() * 2.0 - 1.0).acos();
+    let phi: f64 = 2.0 * PI * fastrand::f64();
+    let x = theta.sin() * phi.cos();
+    let y = theta.sin() * phi.sin();
+    let z = theta.cos();
+    let result = Vec3f::new(x, y, z);
+    return if result.dot(&normal) > 0.0 {
+        result
+    } else {
+        -result
+    };
 }
