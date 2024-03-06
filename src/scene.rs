@@ -1,34 +1,6 @@
 use na::{Quaternion, UnitQuaternion, Vector3};
 
-use crate::scene;
-
-pub type Vec3f = Vector3<f64>;
-
-#[derive(Clone, Debug)]
-pub enum Shape3D {
-    None,
-    Plane { norm: Vec3f },
-    Ellipsoid { rx: f64, ry: f64, rz: f64 },
-    Box { sx: f64, sy: f64, sz: f64 },
-}
-
-#[derive(Clone, Debug)]
-pub enum Material {
-    Dielectric,
-    Metallic,
-    Diffused,
-}
-
-#[derive(Clone, Debug)]
-pub struct Primitive {
-    pub shape: Shape3D,
-    pub color: Vec3f,
-    pub position: Vec3f,
-    pub rotation: UnitQuaternion<f64>,
-    pub material: Material,
-    pub ior: f64,
-    pub emission: Vec3f,
-}
+use crate::geometry::{Material, Primitive, Shape3D, Vec3f};
 
 #[derive(Clone, Debug)]
 pub enum LightLocation {
@@ -144,20 +116,8 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                 }
             }
             "PLANE" => current_primitive.shape = Shape3D::Plane { norm: get_vector() },
-            "ELLIPSOID" => {
-                current_primitive.shape = Shape3D::Ellipsoid {
-                    rx: get_vector().x,
-                    ry: get_vector().y,
-                    rz: get_vector().z,
-                }
-            }
-            "BOX" => {
-                current_primitive.shape = Shape3D::Box {
-                    sx: get_vector().x,
-                    sy: get_vector().y,
-                    sz: get_vector().z,
-                }
-            }
+            "ELLIPSOID" => current_primitive.shape = Shape3D::Ellipsoid { r: get_vector() },
+            "BOX" => current_primitive.shape = Shape3D::Box { s: get_vector() },
             "POSITION" => {
                 current_primitive.position = get_vector();
             }

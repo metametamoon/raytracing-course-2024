@@ -1,17 +1,27 @@
+mod distributions;
 mod rendering;
 mod scene;
+mod geometry;
 
 extern crate nalgebra as na;
 
 use crate::rendering::render_scene;
 use crate::scene::{parse_file_content, Scene};
+use env_logger::Builder;
 use image::{ImageFormat, RgbImage};
+use log::{LevelFilter};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
 
 fn main() {
+    Builder::new()
+        .filter_level(LevelFilter::Debug)
+        .target(env_logger::Target::Pipe(Box::new(File::create("out.log").unwrap())))
+        .init();
+
+    log::debug!("On creation.");
     let args: Vec<String> = std::env::args().collect();
     let file_string = fs::read_to_string(&args[1]).expect("Failed opening file");
     let file_lines = file_string
