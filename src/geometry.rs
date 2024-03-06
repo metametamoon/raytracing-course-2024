@@ -44,6 +44,20 @@ pub struct Primitive {
 pub static EPS: f64 = 0.0001;
 
 fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection> {
+    let mut intersections = intersect_all_points(ray, shape, upper_bound);
+    if !intersections.is_empty() {
+        Some(intersections.remove(0))
+    } else {
+        None
+    }
+}
+
+pub fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
+    let projection = -ray.dot(normal);
+    ray + normal * projection * 2.0
+}
+
+fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Intersection> {
     match shape {
         Shape3D::None => {
             panic!("Intersect with None")
@@ -51,11 +65,11 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
         Shape3D::Plane { norm } => {
             let x = norm.dot(&ray.direction);
             if x == 0.0 {
-                None
+                Vec::new()
             } else {
                 let offset = -ray.origin.dot(norm) / x;
                 if 0.0 < offset && offset < upper_bound {
-                    Some(Intersection {
+                    vec![Intersection {
                         offset,
                         normal: if x < 0.0 {
                             norm.normalize()
@@ -63,9 +77,9 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
                             -norm.normalize()
                         },
                         is_outer_to_inner: true,
-                    })
+                    }]
                 } else {
-                    None
+                    Vec::new()
                 }
             }
         }
@@ -77,33 +91,34 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
             let c = o1.dot(&o1) - 1.0;
             let discr = b * b - 4.0 * a * c;
             if discr < 0.0 {
-                None
+                Vec::new()
             } else {
                 let x1 = (-b - discr.sqrt()) / (2.0 * a);
                 let x2 = (-b + discr.sqrt()) / (2.0 * a);
 
                 let t1 = f64::min(x1, x2);
                 let t2 = f64::max(x1, x2);
+                let mut result = Vec::new();
                 if t1 > 0.0 && t1 < upper_bound {
                     let p1 = ray.origin + ray.direction * t1;
                     let norm1 = p1.component_div(&r).component_div(&r).normalize();
-                    return Some(Intersection {
+                    result.push(Intersection {
                         offset: t1,
                         normal: norm1,
                         is_outer_to_inner: true,
                     });
-                } else if t2 > 0.0 && t2 < upper_bound {
+                }
+                if t2 > 0.0 && t2 < upper_bound {
                     let p2 = ray.origin + ray.direction * t2;
 
                     let norm2 = p2.component_div(&r).component_div(&r).normalize();
-                    Some(Intersection {
+                    result.push(Intersection {
                         offset: t2,
                         normal: -norm2,
                         is_outer_to_inner: false,
-                    })
-                } else {
-                    None
+                    });
                 }
+                result
             }
         }
         Shape3D::Box { s } => {
@@ -143,6 +158,7 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
             let t_min = f64::max(t_x[0], f64::max(t_y[0], t_z[0]));
             let t_max = f64::min(t_x[1], f64::min(t_y[1], t_z[1]));
             if t_min < t_max {
+                let mut result = Vec::new();
                 if t_min > 0.0 && t_min < upper_bound {
                     let p_min = ray.origin + ray.direction * t_min;
                     let norm_min = {
@@ -154,12 +170,13 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
                             Vec3f::new(0.0, 0.0, (p_min.z / s.z).signum())
                         }
                     };
-                    Some(Intersection {
+                    result.push(Intersection {
                         offset: t_min,
                         normal: norm_min,
                         is_outer_to_inner: true,
                     })
-                } else if t_max > 0.0 && t_max < upper_bound {
+                }
+                if t_max > 0.0 && t_max < upper_bound {
                     let p_max = ray.origin + ray.direction * t_max;
                     let norm_max = {
                         if (p_max.x / s.x).abs() > 1.0 - EPS {
@@ -170,24 +187,18 @@ fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection
                             Vec3f::new(0.0, 0.0, (p_max.z / s.z).signum())
                         }
                     };
-                    Some(Intersection {
+                    result.push(Intersection {
                         offset: t_max,
                         normal: -norm_max.normalize(),
                         is_outer_to_inner: false,
                     })
-                } else {
-                    None
                 }
+                result
             } else {
-                None
+                Vec::new()
             }
         }
     }
-}
-
-pub fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
-    let projection = -ray.dot(normal);
-    ray + normal * projection * 2.0
 }
 
 pub fn intersect_ray_with_primitive(
@@ -211,4 +222,11 @@ pub fn intersect_ray_with_primitive(
     };
     let x = rotated_ray.origin + rotated_ray.direction;
     intersect(rotated_ray, &primitive.shape, min_dist)
+}
+
+pub fn intersect_ray_with_primitive_all_points(
+    ray: &Ray,
+    primitive: &Primitive,
+) -> Vec<Intersection> {
+    todo!();
 }

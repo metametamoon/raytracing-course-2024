@@ -20,23 +20,56 @@ use rayon::prelude::*;
 static PARALLEL: bool = false;
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
+    let sample_distribution = MixDistribution {
+        distributions: vec![
+            Box::new(CosineWeightedDistribution),
+            Box::new(MixDistribution {
+                distributions: scene
+                    .primitives
+                    .iter()
+                    .filter_map(|x| {
+                        let result: Box<dyn SampleDistribution> =
+                            Box::new(DirectionOnObjectDistribution {
+                                primitive: x.clone(),
+                            });
+                        match x.shape {
+                            Shape3D::None => None,
+                            Shape3D::Plane { norm } => None,
+                            Shape3D::Ellipsoid { r } => Some(result),
+                            Shape3D::Box { s } => Some(result),
+                        }
+                    })
+                    .collect(),
+            }),
+        ],
+    };
+    let sample_distribution = CosineWeightedDistribution;
+
     let mut result = Vec::<u8>::new();
     for y in 0..scene.height {
         // println!("{}", y);
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
-                let total_color = if PARALLEL {
-                    (0..scene.samples)
-                        .into_par_iter()
-                        .map(|_: i32| get_ray_color(&ray_to_pixel, scene, scene.ray_depth))
-                        .reduce(|| Vec3f::default(), |x, y| x + y)
-                } else {
-                    (0..scene.samples)
-                        .map(|_: i32| get_ray_color(&ray_to_pixel, scene, scene.ray_depth))
-                        .reduce(|x, y| x + y)
-                        .unwrap()
-                };
+                // parallel:
+                // let total_color=
+                //     (0..scene.samples)
+                //         .into_par_iter()
+                //         .map(|_: i32| {
+                //             get_ray_color(
+                //                 &ray_to_pixel,
+                //                 scene,
+                //                 scene.ray_depth,
+                //                 &sample_distribution,
+                //             )
+                //         })
+                //         .reduce(|| Vec3f::default(), |x, y| x + y);
+                let total_color = (0..scene.samples)
+                    .map(|_: i32| {
+                        get_ray_color(&ray_to_pixel, scene, scene.ray_depth, &sample_distribution)
+                    })
+                    .reduce(|x, y| x + y)
+                    .unwrap();
                 total_color / scene.samples as f64
             };
             result.extend(color_to_pixel(color));
@@ -60,7 +93,12 @@ fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
     }
 }
 
-fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
+fn get_ray_color(
+    ray: &Ray,
+    scene: &Scene,
+    recursion_depth: i32,
+    distribution: &dyn SampleDistribution,
+) -> Vec3f {
     if recursion_depth <= 0 {
         return Vec3f::default();
     }
@@ -70,30 +108,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
             match primitive.material {
                 Material::Diffused => {
                     let mut total_color = primitive.emission;
-                    let distribution = CosineWeightedDistribution;
-                    // let distribution = MixDistribution {
-                    //     distributions: vec![
-                    //         Box::new(CosineWeightedDistribution),
-                    //         Box::new(MixDistribution {
-                    //             distributions: scene
-                    //                 .primitives
-                    //                 .iter()
-                    //                 .filter_map(|x| {
-                    //                     let result: Box<dyn SampleDistribution> =
-                    //                         Box::new(DirectionOnObjectDistribution {
-                    //                             primitive: x.clone(),
-                    //                         });
-                    //                     match x.shape {
-                    //                         Shape3D::None => None,
-                    //                         Shape3D::Plane { norm } => None,
-                    //                         Shape3D::Ellipsoid { r } => Some(result),
-                    //                         Shape3D::Box { s } => Some(result),
-                    //                     }
-                    //                 })
-                    //                 .collect(),
-                    //         }),
-                    //     ],
-                    // };
+                    // let distribution = CosineWeightedDistribution;
                     let (rnd_vec, pdf) = loop {
                         let rnd_vec =
                             distribution.sample(&intersection_point, &intersection.normal);
@@ -113,6 +128,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                         },
                         scene,
                         recursion_depth - 1,
+                        distribution,
                     );
                     total_color += color_refl.component_mul(&primitive.color)
                         * std::f64::consts::FRAC_1_PI
@@ -128,7 +144,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                         origin: corrected_point,
                         direction: reflected_direction,
                     };
-                    get_ray_color(&reflection_ray, scene, recursion_depth - 1)
+                    get_ray_color(&reflection_ray, scene, recursion_depth - 1, distribution)
                         .component_mul(&primitive.color)
                 }
                 Material::Dielectric => {
@@ -148,6 +164,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                             recursion_depth,
                             &intersection,
                             intersection_point,
+                            distribution,
                         )
                     } else {
                         let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
@@ -159,6 +176,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                 recursion_depth,
                                 &intersection,
                                 intersection_point,
+                                distribution,
                             );
                             reflection_color
                         } else {
@@ -176,6 +194,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                         },
                                         scene,
                                         recursion_depth - 1,
+                                        distribution,
                                     )
                                 } else {
                                     let v2 = (ray.direction - outer_norm).normalize();
@@ -190,6 +209,7 @@ fn get_ray_color(ray: &Ray, scene: &Scene, recursion_depth: i32) -> Vec3f {
                                         },
                                         scene,
                                         recursion_depth - 1,
+                                        distribution,
                                     )
                                 }
                             };
@@ -213,6 +233,7 @@ fn get_reflection_color(
     recursion_depth: i32,
     intersection: &Intersection,
     intersection_point: Vec3f,
+    distribution: &dyn SampleDistribution,
 ) -> Vec3f {
     let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
     let corrected_point = intersection_point + intersection.normal * EPS;
@@ -220,7 +241,7 @@ fn get_reflection_color(
         origin: corrected_point,
         direction: reflected_direction,
     };
-    get_ray_color(&reflection_ray, scene, recursion_depth - 1)
+    get_ray_color(&reflection_ray, scene, recursion_depth - 1, distribution)
 }
 
 fn intersect_ray_with_scene<'a>(

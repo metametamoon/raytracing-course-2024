@@ -3,7 +3,8 @@ use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
 use crate::geometry::{
-    intersect_ray_with_primitive, Intersection, Primitive, Ray, Shape3D, Vec3f, EPS,
+    intersect_ray_with_primitive, intersect_ray_with_primitive_all_points, Intersection, Primitive,
+    Ray, Shape3D, Vec3f, EPS,
 };
 
 pub trait SampleDistribution {
@@ -62,6 +63,27 @@ impl SampleDistribution for CosineWeightedDistribution {
 
     fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {
         f64::max(0.0, direction.dot(&normal)) / std::f64::consts::PI
+    }
+}
+
+fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
+    match shape {
+        Shape3D::None => 0.0,
+        Shape3D::Plane { .. } => 0.0,
+        Shape3D::Ellipsoid { r } => {
+            let n = local_coords.component_div(&r);
+            if (n.norm() - 1.0).abs() > EPS {
+                log::debug!("Weird norm for unit sphere: {} of vector {:?}", n.norm(), n);
+            }
+            let root =
+                ((n.x * r.y * r.z).powi(2) + (r.x * n.y * r.z).powi(2) + (r.x * r.y * n.z).powi(2))
+                    .sqrt();
+            1.0 / (4.0 * std::f64::consts::PI * root)
+        }
+        Shape3D::Box { s } => {
+            let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
+            1.0 / area
+        }
     }
 }
 
@@ -141,6 +163,29 @@ impl SampleDistribution for DirectionOnObjectDistribution {
     }
 
     fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> f64 {
+        let ray = Ray {
+            origin: *point,
+            direction: *direction,
+        };
+        let all_intersections = intersect_ray_with_primitive_all_points(&ray, &self.primitive);
+        let pdf = all_intersections
+            .iter()
+            .map(|intersection| {
+                let global_coords_point = ray.origin + intersection.offset * ray.direction;
+                let local_coords = self
+                    .primitive
+                    .rotation
+                    .conjugate()
+                    .transform_vector(&(global_coords_point - self.primitive.position));
+                let local_pdf = get_local_pdf(&self.primitive.shape, local_coords);
+                let vector_on_sample = global_coords_point - point;
+                let omega = vector_on_sample.normalize();
+                local_pdf * vector_on_sample.norm_squared()
+                    / (intersection.normal.dot(&omega)).abs()
+            })
+            .sum();
+        return pdf;
+
         let first_ray = Ray {
             origin: *point,
             direction: *direction,
@@ -152,22 +197,32 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                 Shape3D::None => panic!("pdf on None!"),
                 Shape3D::Plane { norm: _ } => panic!("pdf on Plane!"),
                 Shape3D::Ellipsoid { r } => {
-                    let get_pdf = |r: &Vec3f, ray: &Ray, intersection: &Intersection| {
+                    let get_pdf = |ray: &Ray, intersection: &Intersection| {
                         let global_coords_point = ray.origin + intersection.offset * ray.direction;
                         let local_coords = self
                             .primitive
                             .rotation
+                            .conjugate()
                             .transform_vector(&(global_coords_point - self.primitive.position));
                         let n = local_coords.component_div(&r);
+                        if (n.norm() - 1.0).abs() > EPS {
+                            log::debug!(
+                                "Weird norm for unit sphere: {} of vector {:?}",
+                                n.norm(),
+                                n
+                            );
+                        }
                         let root = ((n.x * r.y * r.z).powi(2)
                             + (r.x * n.y * r.z).powi(2)
                             + (r.x * r.y * n.z).powi(2))
                         .sqrt();
+                        let vector_on_sample = global_coords_point - point;
+                        let omega = vector_on_sample.normalize();
                         let local_pdf = 1.0 / (4.0 * std::f64::consts::PI * root);
-                        local_pdf * (global_coords_point - point).norm_squared()
-                            / (intersection.normal.dot(&direction.normalize())).abs()
+                        local_pdf * vector_on_sample.norm_squared()
+                            / (intersection.normal.dot(&omega)).abs()
                     };
-                    let mut ans = get_pdf(&r, &first_ray, &intersection);
+                    let mut ans = get_pdf(&first_ray, &intersection);
                     let snd_ray = Ray {
                         origin: point + (intersection.offset + EPS) * direction,
                         direction: *direction,
@@ -175,7 +230,7 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                     if let Some(snd_intersection) =
                         intersect_ray_with_primitive(&snd_ray, &self.primitive, f64::INFINITY)
                     {
-                        ans += get_pdf(&r, &snd_ray, &snd_intersection);
+                        ans += get_pdf(&snd_ray, &snd_intersection);
                     }
                     ans
                 }
@@ -184,8 +239,11 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                     let local_pdf = 1.0 / area;
                     let global_coords_point1 = point + intersection.offset * direction;
 
-                    let mut ans = local_pdf * (global_coords_point1 - point).norm_squared()
-                        / (intersection.normal.dot(&direction.normalize())).abs();
+                    let vector_on_sample = global_coords_point1 - point;
+                    let omega = vector_on_sample.normalize();
+
+                    let mut ans = local_pdf * vector_on_sample.norm_squared()
+                        / (intersection.normal.dot(&omega)).abs();
                     if let Some(intersection2) = intersect_ray_with_primitive(
                         &Ray {
                             origin: point + (intersection.offset + EPS) * direction,
@@ -197,8 +255,10 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                         let global_coords_point2 = point
                             + (intersection.offset + EPS) * direction
                             + intersection2.offset * direction;
-                        ans += local_pdf * (global_coords_point2 - point).norm_squared()
-                            / (intersection2.normal.dot(&direction.normalize())).abs();
+                        let vector_on_sample2 = global_coords_point2 - point;
+                        let omega2 = vector_on_sample2.normalize();
+                        ans += local_pdf * vector_on_sample2.norm_squared()
+                            / (intersection2.normal.dot(&omega2)).abs();
                     }
                     ans
                 }
