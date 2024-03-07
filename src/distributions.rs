@@ -92,9 +92,7 @@ impl SampleDistribution for DirectionOnObjectDistribution {
         let mut rng = rand::thread_rng();
         let local_coords_point = match self.primitive.shape {
             Shape3D::None => panic!("Shape None!"),
-            Shape3D::Plane { norm } => {
-                panic!("Plane not supported!")
-            }
+            Shape3D::Plane { norm } => panic!("Plane not supported!"),
             Shape3D::Ellipsoid { r } => {
                 let normal_distr = Normal::new(0.0, 1.0).unwrap();
                 let result = Vec3f::new(
@@ -137,28 +135,12 @@ impl SampleDistribution for DirectionOnObjectDistribution {
             .transform_vector(&local_coords_point)
             + self.primitive.position;
         let direction = global_coords_point - point;
-        if let None = intersect_ray_with_primitive(
-            &Ray {
-                origin: point.clone(),
-                direction,
-            },
-            &self.primitive,
-            f64::INFINITY,
-        ) {
-            log::debug!("ray end point:{:?}", point.clone() + direction);
-            let x = intersect_ray_with_primitive(
-                &Ray {
-                    origin: point.clone(),
-                    direction,
-                },
-                &self.primitive,
-                f64::INFINITY,
-            );
-            log::debug!("direction on vec turned into 0");
-        }
-        if !(self.pdf(&point, &normal, &direction) > 0.0) {
-            let _ = self.pdf(&point, &normal, &direction);
-        }
+        // if !(self.pdf(&point, &normal, &direction) > 0.0) {
+        //     log::debug!(
+        //         "Bad: sampled direction with zero pdf for shape {:?}",
+        //         self.primitive.shape
+        //     );
+        // }
         direction
     }
 
@@ -180,92 +162,11 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                 let local_pdf = get_local_pdf(&self.primitive.shape, local_coords);
                 let vector_on_sample = global_coords_point - point;
                 let omega = vector_on_sample.normalize();
-                local_pdf * vector_on_sample.norm_squared()
-                    / (intersection.normal.dot(&omega)).abs()
+                local_pdf
+                    * (vector_on_sample.norm_squared() / (intersection.normal.dot(&omega)).abs())
             })
             .sum();
-        return pdf;
-
-        let first_ray = Ray {
-            origin: *point,
-            direction: *direction,
-        };
-        if let Some(intersection) =
-            intersect_ray_with_primitive(&first_ray, &self.primitive, f64::INFINITY)
-        {
-            match self.primitive.shape {
-                Shape3D::None => panic!("pdf on None!"),
-                Shape3D::Plane { norm: _ } => panic!("pdf on Plane!"),
-                Shape3D::Ellipsoid { r } => {
-                    let get_pdf = |ray: &Ray, intersection: &Intersection| {
-                        let global_coords_point = ray.origin + intersection.offset * ray.direction;
-                        let local_coords = self
-                            .primitive
-                            .rotation
-                            .conjugate()
-                            .transform_vector(&(global_coords_point - self.primitive.position));
-                        let n = local_coords.component_div(&r);
-                        if (n.norm() - 1.0).abs() > EPS {
-                            log::debug!(
-                                "Weird norm for unit sphere: {} of vector {:?}",
-                                n.norm(),
-                                n
-                            );
-                        }
-                        let root = ((n.x * r.y * r.z).powi(2)
-                            + (r.x * n.y * r.z).powi(2)
-                            + (r.x * r.y * n.z).powi(2))
-                        .sqrt();
-                        let vector_on_sample = global_coords_point - point;
-                        let omega = vector_on_sample.normalize();
-                        let local_pdf = 1.0 / (4.0 * std::f64::consts::PI * root);
-                        local_pdf * vector_on_sample.norm_squared()
-                            / (intersection.normal.dot(&omega)).abs()
-                    };
-                    let mut ans = get_pdf(&first_ray, &intersection);
-                    let snd_ray = Ray {
-                        origin: point + (intersection.offset + EPS) * direction,
-                        direction: *direction,
-                    };
-                    if let Some(snd_intersection) =
-                        intersect_ray_with_primitive(&snd_ray, &self.primitive, f64::INFINITY)
-                    {
-                        ans += get_pdf(&snd_ray, &snd_intersection);
-                    }
-                    ans
-                }
-                Shape3D::Box { s } => {
-                    let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
-                    let local_pdf = 1.0 / area;
-                    let global_coords_point1 = point + intersection.offset * direction;
-
-                    let vector_on_sample = global_coords_point1 - point;
-                    let omega = vector_on_sample.normalize();
-
-                    let mut ans = local_pdf * vector_on_sample.norm_squared()
-                        / (intersection.normal.dot(&omega)).abs();
-                    if let Some(intersection2) = intersect_ray_with_primitive(
-                        &Ray {
-                            origin: point + (intersection.offset + EPS) * direction,
-                            direction: *direction,
-                        },
-                        &self.primitive,
-                        f64::INFINITY,
-                    ) {
-                        let global_coords_point2 = point
-                            + (intersection.offset + EPS) * direction
-                            + intersection2.offset * direction;
-                        let vector_on_sample2 = global_coords_point2 - point;
-                        let omega2 = vector_on_sample2.normalize();
-                        ans += local_pdf * vector_on_sample2.norm_squared()
-                            / (intersection2.normal.dot(&omega2)).abs();
-                    }
-                    ans
-                }
-            }
-        } else {
-            0.0
-        }
+        pdf
     }
 }
 

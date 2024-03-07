@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use nalgebra::{UnitQuaternion, Vector3};
 
 pub type Vec3f = Vector3<f64>;
@@ -57,7 +58,7 @@ pub fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
     ray + normal * projection * 2.0
 }
 
-fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Intersection> {
+fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec<Intersection, 2> {
     match shape {
         Shape3D::None => {
             panic!("Intersect with None")
@@ -65,11 +66,12 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Inte
         Shape3D::Plane { norm } => {
             let x = norm.dot(&ray.direction);
             if x == 0.0 {
-                Vec::new()
+                ArrayVec::new()
             } else {
                 let offset = -ray.origin.dot(norm) / x;
+                let mut result = ArrayVec::<Intersection, 2>::new();
                 if 0.0 < offset && offset < upper_bound {
-                    vec![Intersection {
+                    result.push(Intersection {
                         offset,
                         normal: if x < 0.0 {
                             norm.normalize()
@@ -77,10 +79,9 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Inte
                             -norm.normalize()
                         },
                         is_outer_to_inner: true,
-                    }]
-                } else {
-                    Vec::new()
+                    })
                 }
+                result
             }
         }
         Shape3D::Ellipsoid { r } => {
@@ -91,14 +92,14 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Inte
             let c = o1.dot(&o1) - 1.0;
             let discr = b * b - 4.0 * a * c;
             if discr < 0.0 {
-                Vec::new()
+                ArrayVec::new()
             } else {
                 let x1 = (-b - discr.sqrt()) / (2.0 * a);
                 let x2 = (-b + discr.sqrt()) / (2.0 * a);
 
                 let t1 = f64::min(x1, x2);
                 let t2 = f64::max(x1, x2);
-                let mut result = Vec::new();
+                let mut result = ArrayVec::<Intersection, 2>::new();
                 if t1 > 0.0 && t1 < upper_bound {
                     let p1 = ray.origin + ray.direction * t1;
                     let norm1 = p1.component_div(&r).component_div(&r).normalize();
@@ -158,7 +159,7 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Inte
             let t_min = f64::max(t_x[0], f64::max(t_y[0], t_z[0]));
             let t_max = f64::min(t_x[1], f64::min(t_y[1], t_z[1]));
             if t_min < t_max {
-                let mut result = Vec::new();
+                let mut result = ArrayVec::<Intersection, 2>::new();
                 if t_min > 0.0 && t_min < upper_bound {
                     let p_min = ray.origin + ray.direction * t_min;
                     let norm_min = {
@@ -195,7 +196,7 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Vec<Inte
                 }
                 result
             } else {
-                Vec::new()
+                ArrayVec::<Intersection, 2>::new()
             }
         }
     }
@@ -227,6 +228,21 @@ pub fn intersect_ray_with_primitive(
 pub fn intersect_ray_with_primitive_all_points(
     ray: &Ray,
     primitive: &Primitive,
-) -> Vec<Intersection> {
-    todo!();
+) -> ArrayVec<Intersection, 2> {
+    let transposed_ray = Ray {
+        origin: ray.origin - primitive.position,
+        direction: ray.direction,
+    };
+    let rotated_ray = Ray {
+        origin: primitive
+            .rotation
+            .conjugate()
+            .transform_vector(&transposed_ray.origin),
+        direction: primitive
+            .rotation
+            .conjugate()
+            .transform_vector(&transposed_ray.direction),
+    };
+    let x = rotated_ray.origin + rotated_ray.direction;
+    intersect_all_points(rotated_ray, &primitive.shape, f64::INFINITY)
 }

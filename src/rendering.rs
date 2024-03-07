@@ -43,7 +43,6 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
             }),
         ],
     };
-    let sample_distribution = CosineWeightedDistribution;
 
     let mut result = Vec::<u8>::new();
     for y in 0..scene.height {
@@ -104,7 +103,7 @@ fn get_ray_color(
     }
     match intersect_ray_with_scene(ray, scene) {
         Some((primitive, intersection)) => {
-            let intersection_point = ray.origin + ray.direction * intersection.offset;
+            let intersection_point = ray.origin + ray.direction * (intersection.offset - EPS);
             match primitive.material {
                 Material::Diffused => {
                     let mut total_color = primitive.emission;
@@ -120,20 +119,22 @@ fn get_ray_color(
                             log::info!("Failed a sampling (probably a floating-point error)");
                         }
                     };
-                    assert!(pdf > 0.0, "pdf should be greated then zero!");
+                    assert!(pdf > 0.0, "pdf should be greater then zero!");
                     let color_refl = get_ray_color(
                         &Ray {
-                            origin: intersection_point + EPS * intersection.normal,
+                            origin: intersection_point,
                             direction: rnd_vec,
                         },
                         scene,
                         recursion_depth - 1,
                         distribution,
                     );
-                    total_color += color_refl.component_mul(&primitive.color)
-                        * std::f64::consts::FRAC_1_PI
-                        * rnd_vec.dot(&intersection.normal)
-                        * (1.0 / pdf);
+                    if rnd_vec.dot(&intersection.normal) > 0.0 {
+                        total_color += color_refl.component_mul(&primitive.color)
+                            * std::f64::consts::FRAC_1_PI
+                            * rnd_vec.dot(&intersection.normal)
+                            * (1.0 / pdf);
+                    }
                     total_color
                 }
                 Material::Metallic => {
