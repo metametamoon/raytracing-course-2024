@@ -1,3 +1,4 @@
+use rand::rngs::ThreadRng;
 use std::f64::consts::PI;
 
 use crate::distributions::CosineWeightedDistribution;
@@ -39,11 +40,12 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
             }),
         ],
     };
-    let sample_distribution = CosineWeightedDistribution;
+    // let sample_distribution = CosineWeightedDistribution;
 
     let mut result = Vec::<u8>::new();
+    let mut rng = rand::thread_rng();
     for y in 0..scene.height {
-        // println!("{}", y);
+        println!("{}", y);
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
@@ -62,7 +64,13 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                 //         .reduce(|| Vec3f::default(), |x, y| x + y);
                 let total_color = (0..scene.samples)
                     .map(|_: i32| {
-                        get_ray_color(&ray_to_pixel, scene, scene.ray_depth, &sample_distribution)
+                        get_ray_color(
+                            &ray_to_pixel,
+                            scene,
+                            scene.ray_depth,
+                            &sample_distribution,
+                            &mut rng,
+                        )
                     })
                     .reduce(|x, y| x + y)
                     .unwrap();
@@ -94,6 +102,7 @@ fn get_ray_color(
     scene: &Scene,
     recursion_depth: i32,
     distribution: &dyn SampleDistribution,
+    rng: &mut ThreadRng,
 ) -> Vec3f {
     if recursion_depth <= 0 {
         return Vec3f::default();
@@ -106,7 +115,7 @@ fn get_ray_color(
                     let mut total_color = primitive.emission;
                     let (rnd_vec, pdf) = loop {
                         let rnd_vec =
-                            distribution.sample(&intersection_point, &intersection.normal);
+                            distribution.sample(&intersection_point, &intersection.normal, rng);
                         let pdf =
                             distribution.pdf(&intersection_point, &intersection.normal, &rnd_vec);
                         if pdf > 0.0 {
@@ -124,6 +133,7 @@ fn get_ray_color(
                         scene,
                         recursion_depth - 1,
                         distribution,
+                        rng,
                     );
                     if rnd_vec.dot(&intersection.normal) > 0.0 {
                         total_color += color_refl.component_mul(&primitive.color)
@@ -141,8 +151,14 @@ fn get_ray_color(
                         origin: corrected_point,
                         direction: reflected_direction,
                     };
-                    get_ray_color(&reflection_ray, scene, recursion_depth - 1, distribution)
-                        .component_mul(&primitive.color)
+                    get_ray_color(
+                        &reflection_ray,
+                        scene,
+                        recursion_depth - 1,
+                        distribution,
+                        rng,
+                    )
+                    .component_mul(&primitive.color)
                 }
                 Material::Dielectric => {
                     let cosine = -ray.direction.normalize().dot(&intersection.normal);
@@ -162,6 +178,7 @@ fn get_ray_color(
                             &intersection,
                             intersection_point,
                             distribution,
+                            rng,
                         )
                     } else {
                         let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
@@ -174,6 +191,7 @@ fn get_ray_color(
                                 &intersection,
                                 intersection_point,
                                 distribution,
+                                rng,
                             )
                         } else {
                             let refracted_color = {
@@ -191,6 +209,7 @@ fn get_ray_color(
                                         scene,
                                         recursion_depth - 1,
                                         distribution,
+                                        rng,
                                     )
                                 } else {
                                     let v2 = (ray.direction - outer_norm).normalize();
@@ -206,6 +225,7 @@ fn get_ray_color(
                                         scene,
                                         recursion_depth - 1,
                                         distribution,
+                                        rng,
                                     )
                                 }
                             };
@@ -230,6 +250,7 @@ fn get_reflection_color(
     intersection: &Intersection,
     intersection_point: Vec3f,
     distribution: &dyn SampleDistribution,
+    rng: &mut ThreadRng,
 ) -> Vec3f {
     let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
     let corrected_point = intersection_point + intersection.normal * EPS;
@@ -237,7 +258,13 @@ fn get_reflection_color(
         origin: corrected_point,
         direction: reflected_direction,
     };
-    get_ray_color(&reflection_ray, scene, recursion_depth - 1, distribution)
+    get_ray_color(
+        &reflection_ray,
+        scene,
+        recursion_depth - 1,
+        distribution,
+        rng,
+    )
 }
 
 fn intersect_ray_with_scene<'a>(

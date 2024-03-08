@@ -122,34 +122,22 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
             let sx = s.x;
             let sy = s.y;
             let sz = s.z;
-            let mut t_x = if ray.direction.x.abs() > EPS {
-                [
-                    (-sx - ray.origin.x) / ray.direction.x,
-                    (sx - ray.origin.x) / ray.direction.x,
-                ]
-            } else {
-                [-f64::INFINITY, f64::INFINITY]
-            };
+            let mut t_x = [
+                (-sx - ray.origin.x) / (ray.direction.x + 0.001 * EPS),
+                (sx - ray.origin.x) / (ray.direction.x + 0.001 * EPS),
+            ];
             t_x.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            let mut t_y = if ray.direction.y.abs() > EPS {
-                [
-                    (-sy - ray.origin.y) / ray.direction.y,
-                    (sy - ray.origin.y) / ray.direction.y,
-                ]
-            } else {
-                [-f64::INFINITY, f64::INFINITY]
-            };
+            let mut t_y = [
+                (-sy - ray.origin.y) / (ray.direction.y + 0.001 * EPS),
+                (sy - ray.origin.y) / (ray.direction.y + 0.001 * EPS),
+            ];
             t_y.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            let mut t_z = if ray.direction.z.abs() > EPS {
-                [
-                    (-sz - ray.origin.z) / ray.direction.z,
-                    (sz - ray.origin.z) / ray.direction.z,
-                ]
-            } else {
-                [-f64::INFINITY, f64::INFINITY]
-            };
+            let mut t_z = [
+                (-sz - ray.origin.z) / (ray.direction.z + 0.001 * EPS),
+                (sz - ray.origin.z) / (ray.direction.z + 0.001 * EPS),
+            ];
             t_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
             let t_min = f64::max(t_x[0], f64::max(t_y[0], t_z[0]));

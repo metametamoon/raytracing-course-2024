@@ -25,8 +25,7 @@ fn test_distribution(distribution: impl SampleDistribution) {
     let mut rng = rand::thread_rng();
     let normal = Vec3f::x();
     let point = Vec3f::default();
-    // let n = 1_000_000;
-    let n = 50000;
+    let n = 1_000_000;
     let results = (0..n)
         .map(|_| distribution.pdf(&point, &normal, &random_unit_vec(&mut rng)))
         .collect::<Vec<_>>();
@@ -46,8 +45,6 @@ fn test_cosine_distribution() {
 
 #[test]
 fn test_light_box_distribution_norotation() {
-    let mut rng = rand::thread_rng();
-    let normal = Vec3f::new(1.0, 0.0, 0.0);
     let object3d = Object3D {
         shape: Shape3D::Box {
             s: Vec3f::new(1.0, 2.0, 3.0),
@@ -74,16 +71,6 @@ fn test_light_box_distribution() {
         position: Vec3f::new(0.0, 0.0, 4.0),
         rotation: rnd_rotation,
     };
-    for d in [
-        Vec3f::x(),
-        -Vec3f::x(),
-        Vec3f::y(),
-        -Vec3f::y(),
-        Vec3f::z(),
-        -Vec3f::z(),
-    ] {
-        println!("Possible normal: {:?}", rnd_rotation.transform_vector(&d));
-    }
     test_distribution(LightSamplingDistribution { object3d })
 }
 
