@@ -40,12 +40,10 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
             }),
         ],
     };
-    // let sample_distribution = CosineWeightedDistribution;
 
     let mut result = Vec::<u8>::new();
     let mut rng = rand::thread_rng();
     for y in 0..scene.height {
-        println!("{}", y);
         for x in 0..scene.width {
             let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
