@@ -1,6 +1,6 @@
 use na::{Quaternion, UnitQuaternion, Vector3};
 
-use crate::geometry::{Material, Primitive, Shape3D, Vec3f};
+use crate::geometry::{Material, Object3D, Shape3D, Vec3f};
 
 #[derive(Clone, Debug)]
 pub enum LightLocation {
@@ -12,6 +12,15 @@ pub enum LightLocation {
 pub struct LightSource {
     pub light_intensity: Vec3f,
     pub location: LightLocation,
+}
+
+#[derive(Clone, Debug)]
+pub struct Primitive {
+    pub object3d: Object3D,
+    pub color: Vec3f,
+    pub material: Material,
+    pub ior: f64,
+    pub emission: Vec3f,
 }
 
 #[derive(Debug)]
@@ -51,10 +60,12 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
     };
 
     let mut current_primitive = Primitive {
-        shape: Shape3D::None,
+        object3d: Object3D {
+            shape: Shape3D::None,
+            position: Default::default(),
+            rotation: Default::default(),
+        },
         color: Default::default(),
-        position: Default::default(),
-        rotation: Default::default(),
         material: Material::Diffused,
         ior: 0.0,
         emission: Default::default(),
@@ -101,36 +112,41 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
             }
             "CAMERA_FOV_X" => result.camera_fov_x = tokens[1].parse().unwrap(),
             "NEW_PRIMITIVE" => {
-                if let Shape3D::None = current_primitive.shape {
+                if let Shape3D::None = current_primitive.object3d.shape {
                 } else {
                     result.primitives.push(current_primitive.clone())
                 }
                 current_primitive = Primitive {
-                    shape: Shape3D::None,
+                    object3d: Object3D {
+                        shape: Shape3D::None,
+                        position: Default::default(),
+                        rotation: Default::default(),
+                    },
                     color: Default::default(),
-                    position: Default::default(),
-                    rotation: Default::default(),
                     material: Material::Diffused,
                     ior: 0.0,
                     emission: Default::default(),
                 }
             }
-            "PLANE" => current_primitive.shape = Shape3D::Plane { norm: get_vector() },
-            "ELLIPSOID" => current_primitive.shape = Shape3D::Ellipsoid { r: get_vector() },
-            "BOX" => current_primitive.shape = Shape3D::Box { s: get_vector() },
+            "PLANE" => current_primitive.object3d.shape = Shape3D::Plane { norm: get_vector() },
+            "ELLIPSOID" => {
+                current_primitive.object3d.shape = Shape3D::Ellipsoid { r: get_vector() }
+            }
+            "BOX" => current_primitive.object3d.shape = Shape3D::Box { s: get_vector() },
             "POSITION" => {
-                current_primitive.position = get_vector();
+                current_primitive.object3d.position = get_vector();
             }
             "COLOR" => {
                 current_primitive.color = get_vector();
             }
             "ROTATION" => {
-                current_primitive.rotation = UnitQuaternion::new_normalize(Quaternion::new(
-                    tokens[4].parse().unwrap(),
-                    tokens[1].parse().unwrap(),
-                    tokens[2].parse().unwrap(),
-                    tokens[3].parse().unwrap(),
-                ))
+                current_primitive.object3d.rotation =
+                    UnitQuaternion::new_normalize(Quaternion::new(
+                        tokens[4].parse().unwrap(),
+                        tokens[1].parse().unwrap(),
+                        tokens[2].parse().unwrap(),
+                        tokens[3].parse().unwrap(),
+                    ))
             }
             "NEW_LIGHT" => {
                 if !first_light_sourse {

@@ -2,10 +2,7 @@ use rand::Rng;
 
 use rand_distr::{Distribution, Normal};
 
-use crate::geometry::{
-    intersect_ray_with_primitive, intersect_ray_with_primitive_all_points, Intersection, Primitive,
-    Ray, Shape3D, Vec3f, EPS,
-};
+use crate::geometry::{intersect_ray_with_object3d_all_points, Object3D, Ray, Shape3D, Vec3f, EPS};
 
 pub trait SampleDistribution {
     fn sample(&self, point: &Vec3f, normal: &Vec3f) -> Vec3f;
@@ -16,8 +13,8 @@ pub struct SemisphereUniform;
 
 pub struct CosineWeightedDistribution;
 
-pub struct DirectionOnObjectDistribution {
-    pub primitive: Primitive,
+pub struct LightSamplingDistribution {
+    pub object3d: Object3D,
 }
 
 pub struct MixDistribution {
@@ -34,14 +31,14 @@ impl SampleDistribution for SemisphereUniform {
             normal_distr.sample(&mut rng),
         )
         .normalize();
-        if result.dot(&normal) > 0.0 {
+        if result.dot(normal) > 0.0 {
             result
         } else {
             -result
         }
     }
 
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {
+    fn pdf(&self, _point: &Vec3f, _normal: &Vec3f, _direction: &Vec3f) -> f64 {
         1.0 / (2.0 * std::f64::consts::PI)
     }
 }
@@ -62,7 +59,7 @@ impl SampleDistribution for CosineWeightedDistribution {
     }
 
     fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {
-        f64::max(0.0, direction.dot(&normal)) / std::f64::consts::PI
+        f64::max(0.0, direction.normalize().dot(normal)) / std::f64::consts::PI
     }
 }
 
@@ -71,7 +68,7 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
         Shape3D::None => 0.0,
         Shape3D::Plane { .. } => 0.0,
         Shape3D::Ellipsoid { r } => {
-            let n = local_coords.component_div(&r);
+            let n = local_coords.component_div(r);
             if (n.norm() - 1.0).abs() > EPS {
                 log::debug!("Weird norm for unit sphere: {} of vector {:?}", n.norm(), n);
             }
@@ -87,12 +84,12 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
     }
 }
 
-impl SampleDistribution for DirectionOnObjectDistribution {
-    fn sample(&self, point: &Vec3f, normal: &Vec3f) -> Vec3f {
+impl SampleDistribution for LightSamplingDistribution {
+    fn sample(&self, point: &Vec3f, _normal: &Vec3f) -> Vec3f {
         let mut rng = rand::thread_rng();
-        let local_coords_point = match self.primitive.shape {
+        let local_coords_point = match self.object3d.shape {
             Shape3D::None => panic!("Shape None!"),
-            Shape3D::Plane { norm } => panic!("Plane not supported!"),
+            Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
             Shape3D::Ellipsoid { r } => {
                 let normal_distr = Normal::new(0.0, 1.0).unwrap();
                 let result = Vec3f::new(
@@ -129,19 +126,10 @@ impl SampleDistribution for DirectionOnObjectDistribution {
                 }
             }
         };
-        let global_coords_point = self
-            .primitive
-            .rotation
-            .transform_vector(&local_coords_point)
-            + self.primitive.position;
-        let direction = global_coords_point - point;
-        // if !(self.pdf(&point, &normal, &direction) > 0.0) {
-        //     log::debug!(
-        //         "Bad: sampled direction with zero pdf for shape {:?}",
-        //         self.primitive.shape
-        //     );
-        // }
-        direction
+        let global_coords_point =
+            self.object3d.rotation.transform_vector(&local_coords_point) + self.object3d.position;
+
+        global_coords_point - point
     }
 
     fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> f64 {
@@ -149,19 +137,20 @@ impl SampleDistribution for DirectionOnObjectDistribution {
             origin: *point,
             direction: *direction,
         };
-        let all_intersections = intersect_ray_with_primitive_all_points(&ray, &self.primitive);
+        let all_intersections = intersect_ray_with_object3d_all_points(&ray, &self.object3d);
         let pdf = all_intersections
             .iter()
             .map(|intersection| {
                 let global_coords_point = ray.origin + intersection.offset * ray.direction;
                 let local_coords = self
-                    .primitive
+                    .object3d
                     .rotation
                     .conjugate()
-                    .transform_vector(&(global_coords_point - self.primitive.position));
-                let local_pdf = get_local_pdf(&self.primitive.shape, local_coords);
+                    .transform_vector(&(global_coords_point - self.object3d.position));
+                let local_pdf = get_local_pdf(&self.object3d.shape, local_coords);
                 let vector_on_sample = global_coords_point - point;
                 let omega = vector_on_sample.normalize();
+                // println!("Intersection normal: {:?}", intersection.normal);
                 local_pdf
                     * (vector_on_sample.norm_squared() / (intersection.normal.dot(&omega)).abs())
             })

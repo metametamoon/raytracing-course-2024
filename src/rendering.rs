@@ -1,23 +1,19 @@
 use std::f64::consts::PI;
 
-use crate::distributions::DirectionOnObjectDistribution;
+use crate::distributions::CosineWeightedDistribution;
+use crate::distributions::LightSamplingDistribution;
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
-use crate::distributions::{CosineWeightedDistribution, SemisphereUniform};
 use crate::geometry::get_reflection_ray;
 use crate::geometry::intersect_ray_with_primitive;
 use crate::geometry::Intersection;
 use crate::geometry::Material;
-use crate::geometry::Primitive;
 use crate::geometry::Ray;
 use crate::geometry::Shape3D;
 use crate::geometry::Vec3f;
 use crate::geometry::EPS;
-use crate::scene::Scene;
+use crate::scene::{Primitive, Scene};
 use rand_distr::{Distribution, Normal};
-use rayon::prelude::*;
-
-static PARALLEL: bool = false;
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let sample_distribution = MixDistribution {
@@ -27,22 +23,23 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                 distributions: scene
                     .primitives
                     .iter()
-                    .filter_map(|x| {
+                    .filter_map(|primitive| {
                         let result: Box<dyn SampleDistribution> =
-                            Box::new(DirectionOnObjectDistribution {
-                                primitive: x.clone(),
+                            Box::new(LightSamplingDistribution {
+                                object3d: primitive.object3d.clone(),
                             });
-                        match x.shape {
+                        match primitive.object3d.shape {
                             Shape3D::None => None,
-                            Shape3D::Plane { norm } => None,
-                            Shape3D::Ellipsoid { r } => Some(result),
-                            Shape3D::Box { s } => Some(result),
+                            Shape3D::Plane { norm: _ } => None,
+                            Shape3D::Ellipsoid { r: _ } => Some(result),
+                            Shape3D::Box { s: _ } => Some(result),
                         }
                     })
                     .collect(),
             }),
         ],
     };
+    let sample_distribution = CosineWeightedDistribution;
 
     let mut result = Vec::<u8>::new();
     for y in 0..scene.height {
@@ -107,7 +104,6 @@ fn get_ray_color(
             match primitive.material {
                 Material::Diffused => {
                     let mut total_color = primitive.emission;
-                    // let distribution = CosineWeightedDistribution;
                     let (rnd_vec, pdf) = loop {
                         let rnd_vec =
                             distribution.sample(&intersection_point, &intersection.normal);
@@ -160,7 +156,7 @@ fn get_ray_color(
                     let sine2 = sine * eta1 / eta2;
                     if sine2 > 1.0 {
                         get_reflection_color(
-                            &ray,
+                            ray,
                             scene,
                             recursion_depth,
                             &intersection,
@@ -171,15 +167,14 @@ fn get_ray_color(
                         let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                         let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
                         if fastrand::f64() < reflected {
-                            let reflection_color = get_reflection_color(
-                                &ray,
+                            get_reflection_color(
+                                ray,
                                 scene,
                                 recursion_depth,
                                 &intersection,
                                 intersection_point,
                                 distribution,
-                            );
-                            reflection_color
+                            )
                         } else {
                             let refracted_color = {
                                 let outer_norm = -intersection.normal;
@@ -252,10 +247,12 @@ fn intersect_ray_with_scene<'a>(
     let mut min_dist = f64::INFINITY;
     let mut result = None;
     for primitive in &scene.primitives {
-        if let Some(intersection) = intersect_ray_with_primitive(&ray, &primitive, min_dist) {
+        if let Some(intersection) = intersect_ray_with_primitive(ray, &primitive.object3d, min_dist)
+        {
             min_dist = intersection.offset;
             let mut corrected_intersection = intersection;
             corrected_intersection.normal = primitive
+                .object3d
                 .rotation
                 .transform_vector(&corrected_intersection.normal);
             result = Some((primitive, corrected_intersection))
@@ -309,7 +306,7 @@ fn random_vector_norm(normal: &Vec3f) -> Vec3f {
         normal_distr.sample(&mut rng),
     )
     .normalize();
-    if result.dot(&normal) > 0.0 {
+    if result.dot(normal) > 0.0 {
         result
     } else {
         -result
@@ -326,7 +323,7 @@ fn random_vector_loop(normal: &Vec3f) -> Vec3f {
         let norm = v.norm();
         if norm <= 1.0 {
             let result = v.unscale(norm);
-            if result.dot(&normal) > 0.0 {
+            if result.dot(normal) > 0.0 {
                 return result;
             } else {
                 return -result;
@@ -343,7 +340,7 @@ fn random_vector_trigonometry(normal: &Vec3f) -> Vec3f {
     let y = theta.sin() * phi.sin();
     let z = theta.cos();
     let result = Vec3f::new(x, y, z);
-    if result.dot(&normal) > 0.0 {
+    if result.dot(normal) > 0.0 {
         result
     } else {
         -result

@@ -25,21 +25,17 @@ pub enum Shape3D {
 }
 
 #[derive(Clone, Debug)]
+pub struct Object3D {
+    pub shape: Shape3D,
+    pub position: Vec3f,
+    pub rotation: UnitQuaternion<f64>,
+}
+
+#[derive(Clone, Debug)]
 pub enum Material {
     Dielectric,
     Metallic,
     Diffused,
-}
-
-#[derive(Clone, Debug)]
-pub struct Primitive {
-    pub shape: Shape3D,
-    pub color: Vec3f,
-    pub position: Vec3f,
-    pub rotation: UnitQuaternion<f64>,
-    pub material: Material,
-    pub ior: f64,
-    pub emission: Vec3f,
 }
 
 pub static EPS: f64 = 0.0001;
@@ -85,8 +81,8 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
             }
         }
         Shape3D::Ellipsoid { r } => {
-            let d1 = ray.direction.component_div(&r);
-            let o1 = ray.origin.component_div(&r);
+            let d1 = ray.direction.component_div(r);
+            let o1 = ray.origin.component_div(r);
             let a = d1.dot(&d1);
             let b = 2.0 * o1.dot(&d1);
             let c = o1.dot(&o1) - 1.0;
@@ -102,7 +98,7 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
                 let mut result = ArrayVec::<Intersection, 2>::new();
                 if t1 > 0.0 && t1 < upper_bound {
                     let p1 = ray.origin + ray.direction * t1;
-                    let norm1 = p1.component_div(&r).component_div(&r).normalize();
+                    let norm1 = p1.component_div(r).component_div(r).normalize();
                     result.push(Intersection {
                         offset: t1,
                         normal: norm1,
@@ -112,7 +108,7 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
                 if t2 > 0.0 && t2 < upper_bound {
                     let p2 = ray.origin + ray.direction * t2;
 
-                    let norm2 = p2.component_div(&r).component_div(&r).normalize();
+                    let norm2 = p2.component_div(r).component_div(r).normalize();
                     result.push(Intersection {
                         offset: t2,
                         normal: -norm2,
@@ -204,45 +200,47 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
 
 pub fn intersect_ray_with_primitive(
     ray: &Ray,
-    primitive: &Primitive,
+    object: &Object3D,
     min_dist: f64,
 ) -> Option<Intersection> {
     let transposed_ray = Ray {
-        origin: ray.origin - primitive.position,
+        origin: ray.origin - object.position,
         direction: ray.direction,
     };
     let rotated_ray = Ray {
-        origin: primitive
+        origin: object
             .rotation
             .conjugate()
             .transform_vector(&transposed_ray.origin),
-        direction: primitive
+        direction: object
             .rotation
             .conjugate()
             .transform_vector(&transposed_ray.direction),
     };
-    let x = rotated_ray.origin + rotated_ray.direction;
-    intersect(rotated_ray, &primitive.shape, min_dist)
+    intersect(rotated_ray, &object.shape, min_dist)
 }
 
-pub fn intersect_ray_with_primitive_all_points(
+pub fn intersect_ray_with_object3d_all_points(
     ray: &Ray,
-    primitive: &Primitive,
+    object3d: &Object3D,
 ) -> ArrayVec<Intersection, 2> {
     let transposed_ray = Ray {
-        origin: ray.origin - primitive.position,
+        origin: ray.origin - object3d.position,
         direction: ray.direction,
     };
     let rotated_ray = Ray {
-        origin: primitive
+        origin: object3d
             .rotation
             .conjugate()
             .transform_vector(&transposed_ray.origin),
-        direction: primitive
+        direction: object3d
             .rotation
             .conjugate()
             .transform_vector(&transposed_ray.direction),
     };
-    let x = rotated_ray.origin + rotated_ray.direction;
-    intersect_all_points(rotated_ray, &primitive.shape, f64::INFINITY)
+    let mut result = intersect_all_points(rotated_ray, &object3d.shape, f64::INFINITY);
+    for intersection in &mut result {
+        intersection.normal = object3d.rotation.transform_vector(&intersection.normal);
+    }
+    result
 }

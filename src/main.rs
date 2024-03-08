@@ -1,7 +1,9 @@
 mod distributions;
+mod geometry;
 mod rendering;
 mod scene;
-mod geometry;
+#[cfg(test)]
+mod tests;
 
 extern crate nalgebra as na;
 
@@ -9,7 +11,7 @@ use crate::rendering::render_scene;
 use crate::scene::{parse_file_content, Scene};
 use env_logger::Builder;
 use image::{ImageFormat, RgbImage};
-use log::{LevelFilter};
+use log::LevelFilter;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -18,7 +20,9 @@ use std::time::Instant;
 fn main() {
     Builder::new()
         .filter_level(LevelFilter::Debug)
-        .target(env_logger::Target::Pipe(Box::new(File::create("out.log").unwrap())))
+        .target(env_logger::Target::Pipe(Box::new(
+            File::create("out.log").unwrap(),
+        )))
         .init();
 
     log::debug!("On creation.");
