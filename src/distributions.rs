@@ -6,7 +6,7 @@ use rand_distr::{Distribution, Normal};
 use crate::geometry::{intersect_ray_with_object3d_all_points, Object3D, Ray, Shape3D, Vec3f, EPS};
 
 pub trait SampleDistribution {
-    fn sample(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f;
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f;
     fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64;
 }
 
@@ -23,7 +23,7 @@ pub struct MixDistribution {
 }
 
 impl SampleDistribution for SemisphereUniform {
-    fn sample(&self, _: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
+    fn sample_unit_vector(&self, _: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let result = Vec3f::new(
             normal_distr.sample(rng),
@@ -44,7 +44,7 @@ impl SampleDistribution for SemisphereUniform {
 }
 
 impl SampleDistribution for CosineWeightedDistribution {
-    fn sample(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let uniform = Vec3f::new(
             normal_distr.sample(rng),
@@ -84,7 +84,7 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
 }
 
 impl SampleDistribution for LightSamplingDistribution {
-    fn sample(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
         let local_coords_point = match self.object3d.shape {
             Shape3D::None => panic!("Shape None!"),
             Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
@@ -127,7 +127,7 @@ impl SampleDistribution for LightSamplingDistribution {
         let global_coords_point =
             self.object3d.rotation.transform_vector(&local_coords_point) + self.object3d.position;
 
-        global_coords_point - point
+        (global_coords_point - point).normalize()
     }
 
     fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> f64 {
@@ -157,10 +157,10 @@ impl SampleDistribution for LightSamplingDistribution {
 }
 
 impl SampleDistribution for MixDistribution {
-    fn sample(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut ThreadRng) -> Vec3f {
         let n = self.distributions.len();
         let rand_idx = rng.gen_range(0..n);
-        self.distributions[rand_idx].sample(point, normal, rng)
+        self.distributions[rand_idx].sample_unit_vector(point, normal, rng)
     }
 
     fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {

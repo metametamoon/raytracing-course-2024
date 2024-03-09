@@ -112,8 +112,11 @@ fn get_ray_color(
                 Material::Diffused => {
                     let mut total_color = primitive.emission;
                     let (rnd_vec, pdf) = loop {
-                        let rnd_vec =
-                            distribution.sample(&intersection_point, &intersection.normal, rng);
+                        let rnd_vec = distribution.sample_unit_vector(
+                            &intersection_point,
+                            &intersection.normal,
+                            rng,
+                        );
                         let pdf =
                             distribution.pdf(&intersection_point, &intersection.normal, &rnd_vec);
                         if pdf > 0.0 {
