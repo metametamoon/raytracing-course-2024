@@ -45,23 +45,10 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     for y in 0..scene.height {
         for x in 0..scene.width {
-            let ray_to_pixel = get_ray_to_pixel(x, y, scene);
             let color = {
-                // parallel:
-                // let total_color=
-                //     (0..scene.samples)
-                //         .into_par_iter()
-                //         .map(|_: i32| {
-                //             get_ray_color(
-                //                 &ray_to_pixel,
-                //                 scene,
-                //                 scene.ray_depth,
-                //                 &sample_distribution,
-                //             )
-                //         })
-                //         .reduce(|| Vec3f::default(), |x, y| x + y);
                 let total_color = (0..scene.samples)
                     .map(|_: i32| {
+                        let ray_to_pixel = get_ray_to_pixel(x, y, scene);
                         get_ray_color(
                             &ray_to_pixel,
                             scene,
@@ -81,8 +68,8 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
 }
 
 fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
-    let real_x = x as f64 + 0.5;
-    let real_y = y as f64 + 0.5;
+    let real_x = x as f64 + fastrand::f64();
+    let real_y = y as f64 + fastrand::f64();
     let w = scene.width as f64;
     let h = scene.height as f64;
     let px = (2.0 * real_x / w - 1.0) * (scene.camera_fov_x * 0.5).tan();
