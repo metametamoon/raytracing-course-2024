@@ -184,7 +184,7 @@ fn get_ray_color(
                         )
                     } else {
                         let refracted_color = {
-                            let cosine2 = (1.0 - sine2).sqrt();
+                            let cosine2 = (1.0 - sine2 * sine2).sqrt();
                             let new_dir = (eta1 / eta2) * ray.direction.normalize()
                                 + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
                             get_ray_color(
