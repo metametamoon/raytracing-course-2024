@@ -186,7 +186,7 @@ fn intersect_all_points(ray: Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec
     }
 }
 
-pub fn intersect_ray_with_primitive(
+pub fn intersect_ray_with_object3d(
     ray: &Ray,
     object: &Object3D,
     min_dist: f64,
@@ -205,7 +205,12 @@ pub fn intersect_ray_with_primitive(
             .conjugate()
             .transform_vector(&transposed_ray.direction),
     };
-    intersect(rotated_ray, &object.shape, min_dist)
+    if let Some(mut intersection) = intersect(rotated_ray, &object.shape, min_dist) {
+        intersection.normal = object.rotation.transform_vector(&intersection.normal);
+        Some(intersection)
+    } else {
+        None
+    }
 }
 
 pub fn intersect_ray_with_object3d_all_points(

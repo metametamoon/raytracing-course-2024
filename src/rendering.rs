@@ -6,7 +6,7 @@ use crate::distributions::LightSamplingDistribution;
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
 use crate::geometry::get_reflection_ray;
-use crate::geometry::intersect_ray_with_primitive;
+use crate::geometry::intersect_ray_with_object3d;
 use crate::geometry::Intersection;
 use crate::geometry::Material;
 use crate::geometry::Ray;
@@ -189,7 +189,7 @@ fn get_ray_color(
                         } else {
                             let refracted_color = {
                                 let cosine2 = (1.0 - sine2).sqrt();
-                                let new_dir = (eta1 / eta2) * ray.direction
+                                let new_dir = (eta1 / eta2) * ray.direction.normalize()
                                     + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
                                 get_ray_color(
                                     &Ray {
@@ -247,15 +247,10 @@ fn intersect_ray_with_scene<'a>(
     let mut min_dist = f64::INFINITY;
     let mut result = None;
     for primitive in &scene.primitives {
-        if let Some(intersection) = intersect_ray_with_primitive(ray, &primitive.object3d, min_dist)
+        if let Some(intersection) = intersect_ray_with_object3d(ray, &primitive.object3d, min_dist)
         {
             min_dist = intersection.offset;
-            let mut corrected_intersection = intersection;
-            corrected_intersection.normal = primitive
-                .object3d
-                .rotation
-                .transform_vector(&corrected_intersection.normal);
-            result = Some((primitive, corrected_intersection))
+            result = Some((primitive, intersection))
         }
     }
     result
