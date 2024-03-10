@@ -94,18 +94,19 @@ fn get_ray_color(
     }
     match intersect_ray_with_scene(ray, scene) {
         Some((primitive, intersection)) => {
-            let intersection_point = ray.origin + ray.direction * (intersection.offset - EPS);
+            let intersection_point = ray.origin + ray.direction * intersection.offset;
             match primitive.material {
                 Material::Diffused => {
+                    let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                     let mut total_color = primitive.emission;
                     let (rnd_vec, pdf) = loop {
                         let rnd_vec = distribution.sample_unit_vector(
-                            &intersection_point,
+                            &corrected_point,
                             &intersection.normal,
                             rng,
                         );
                         let pdf =
-                            distribution.pdf(&intersection_point, &intersection.normal, &rnd_vec);
+                            distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
                         if pdf > 0.0 {
                             break (rnd_vec, pdf);
                         } else {
@@ -115,7 +116,7 @@ fn get_ray_color(
                     assert!(pdf > 0.0, "pdf should be greater then zero!");
                     let color_refl = get_ray_color(
                         &Ray {
-                            origin: intersection_point,
+                            origin: corrected_point,
                             direction: rnd_vec,
                         },
                         scene,
@@ -134,7 +135,7 @@ fn get_ray_color(
                 Material::Metallic => {
                     let reflected_direction =
                         get_reflection_ray(&ray.direction, &intersection.normal);
-                    let corrected_point = intersection_point + intersection.normal * EPS;
+                    let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                     let reflection_ray = Ray {
                         origin: corrected_point,
                         direction: reflected_direction,
@@ -158,13 +159,17 @@ fn get_ray_color(
                     };
                     let sine = (1.0 - cosine.powi(2)).sqrt();
                     let sine2 = sine * eta1 / eta2;
+                    let corrected_point_backward =
+                        ray.origin + ray.direction * (intersection.offset - EPS);
+                    let corrected_point_forward =
+                        ray.origin + ray.direction * (intersection.offset + EPS);
                     if sine2 > 1.0 {
                         get_reflection_color(
                             ray,
                             scene,
                             recursion_depth,
                             &intersection,
-                            intersection_point,
+                            corrected_point_backward,
                             distribution,
                             rng,
                         )
@@ -183,39 +188,19 @@ fn get_ray_color(
                             )
                         } else {
                             let refracted_color = {
-                                let outer_norm = -intersection.normal;
-                                let outer_norm = outer_norm * ray.direction.dot(&outer_norm);
-                                let tan2 = sine2 / (1.0 - sine2 * sine2).sqrt();
-                                if (ray.direction - outer_norm).norm() < EPS {
-                                    let corrected_point =
-                                        intersection_point - intersection.normal * EPS;
-                                    get_ray_color(
-                                        &Ray {
-                                            origin: corrected_point,
-                                            direction: ray.direction,
-                                        },
-                                        scene,
-                                        recursion_depth - 1,
-                                        distribution,
-                                        rng,
-                                    )
-                                } else {
-                                    let v2 = (ray.direction - outer_norm).normalize();
-                                    let norm_len = outer_norm.norm();
-                                    let refracted_dir = outer_norm + norm_len * tan2 * v2;
-                                    let corrected_point =
-                                        intersection_point - intersection.normal * EPS;
-                                    get_ray_color(
-                                        &Ray {
-                                            origin: corrected_point,
-                                            direction: refracted_dir,
-                                        },
-                                        scene,
-                                        recursion_depth - 1,
-                                        distribution,
-                                        rng,
-                                    )
-                                }
+                                let cosine2 = (1.0 - sine2).sqrt();
+                                let new_dir = (eta1 / eta2) * ray.direction
+                                    + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
+                                get_ray_color(
+                                    &Ray {
+                                        origin: corrected_point_forward,
+                                        direction: new_dir,
+                                    },
+                                    scene,
+                                    recursion_depth - 1,
+                                    distribution,
+                                    rng,
+                                )
                             };
                             if intersection.is_outer_to_inner {
                                 refracted_color.component_mul(&primitive.color)
