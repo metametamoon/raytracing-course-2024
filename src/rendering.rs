@@ -93,77 +93,86 @@ fn get_ray_color(
         return Vec3f::default();
     }
     match intersect_ray_with_scene(ray, scene) {
-        Some((primitive, intersection)) => {
-            let intersection_point = ray.origin + ray.direction * intersection.offset;
-            match primitive.material {
-                Material::Diffused => {
-                    let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
-                    let mut total_color = primitive.emission;
-                    let (rnd_vec, pdf) = loop {
-                        let rnd_vec = distribution.sample_unit_vector(
-                            &corrected_point,
-                            &intersection.normal,
-                            rng,
-                        );
-                        let pdf =
-                            distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
-                        if pdf > 0.0 {
-                            break (rnd_vec, pdf);
-                        } else {
-                            log::info!("Failed a sampling (probably a floating-point error)");
-                        }
-                    };
-                    assert!(pdf > 0.0, "pdf should be greater then zero!");
-                    let color_refl = get_ray_color(
-                        &Ray {
-                            origin: corrected_point,
-                            direction: rnd_vec,
-                        },
-                        scene,
-                        recursion_depth - 1,
-                        distribution,
+        Some((primitive, intersection)) => match primitive.material {
+            Material::Diffused => {
+                let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
+                let mut total_color = primitive.emission;
+                let (rnd_vec, pdf) = loop {
+                    let rnd_vec = distribution.sample_unit_vector(
+                        &corrected_point,
+                        &intersection.normal,
                         rng,
                     );
-                    if rnd_vec.dot(&intersection.normal) > 0.0 {
-                        total_color += color_refl.component_mul(&primitive.color)
-                            * std::f64::consts::FRAC_1_PI
-                            * rnd_vec.dot(&intersection.normal)
-                            * (1.0 / pdf);
+                    let pdf = distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
+                    if pdf > 0.0 {
+                        break (rnd_vec, pdf);
+                    } else {
+                        log::info!("Failed a sampling (probably a floating-point error)");
                     }
-                    total_color
-                }
-                Material::Metallic => {
-                    let reflected_direction =
-                        get_reflection_ray(&ray.direction, &intersection.normal);
-                    let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
-                    let reflection_ray = Ray {
+                };
+                assert!(pdf > 0.0, "pdf should be greater then zero!");
+                let color_refl = get_ray_color(
+                    &Ray {
                         origin: corrected_point,
-                        direction: reflected_direction,
-                    };
-                    get_ray_color(
-                        &reflection_ray,
+                        direction: rnd_vec,
+                    },
+                    scene,
+                    recursion_depth - 1,
+                    distribution,
+                    rng,
+                );
+                if rnd_vec.dot(&intersection.normal) > 0.0 {
+                    total_color += color_refl.component_mul(&primitive.color)
+                        * std::f64::consts::FRAC_1_PI
+                        * rnd_vec.dot(&intersection.normal)
+                        * (1.0 / pdf);
+                }
+                total_color
+            }
+            Material::Metallic => {
+                let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
+                let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
+                let reflection_ray = Ray {
+                    origin: corrected_point,
+                    direction: reflected_direction,
+                };
+                get_ray_color(
+                    &reflection_ray,
+                    scene,
+                    recursion_depth - 1,
+                    distribution,
+                    rng,
+                )
+                .component_mul(&primitive.color)
+            }
+            Material::Dielectric => {
+                let cosine = -ray.direction.normalize().dot(&intersection.normal);
+                let cosine = f64::min(cosine, 1.0);
+                let (eta1, eta2) = if intersection.is_outer_to_inner {
+                    (1.0, primitive.ior)
+                } else {
+                    (primitive.ior, 1.0)
+                };
+                let sine = (1.0 - cosine.powi(2)).sqrt();
+                let sine2 = sine * eta1 / eta2;
+                let corrected_point_backward =
+                    ray.origin + ray.direction * (intersection.offset - EPS);
+                let corrected_point_forward =
+                    ray.origin + ray.direction * (intersection.offset + EPS);
+                if sine2 > 1.0 {
+                    get_reflection_color(
+                        ray,
                         scene,
-                        recursion_depth - 1,
+                        recursion_depth,
+                        &intersection,
+                        corrected_point_backward,
                         distribution,
                         rng,
                     )
-                    .component_mul(&primitive.color)
-                }
-                Material::Dielectric => {
-                    let cosine = -ray.direction.normalize().dot(&intersection.normal);
-                    let cosine = f64::min(cosine, 1.0);
-                    let (eta1, eta2) = if intersection.is_outer_to_inner {
-                        (1.0, primitive.ior)
-                    } else {
-                        (primitive.ior, 1.0)
-                    };
-                    let sine = (1.0 - cosine.powi(2)).sqrt();
-                    let sine2 = sine * eta1 / eta2;
-                    let corrected_point_backward =
-                        ray.origin + ray.direction * (intersection.offset - EPS);
-                    let corrected_point_forward =
-                        ray.origin + ray.direction * (intersection.offset + EPS);
-                    if sine2 > 1.0 {
+                } else {
+                    let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
+                    let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
+                    if fastrand::f64() < reflected {
                         get_reflection_color(
                             ray,
                             scene,
@@ -174,44 +183,30 @@ fn get_ray_color(
                             rng,
                         )
                     } else {
-                        let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
-                        let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                        if fastrand::f64() < reflected {
-                            get_reflection_color(
-                                ray,
+                        let refracted_color = {
+                            let cosine2 = (1.0 - sine2).sqrt();
+                            let new_dir = (eta1 / eta2) * ray.direction.normalize()
+                                + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
+                            get_ray_color(
+                                &Ray {
+                                    origin: corrected_point_forward,
+                                    direction: new_dir,
+                                },
                                 scene,
-                                recursion_depth,
-                                &intersection,
-                                intersection_point,
+                                recursion_depth - 1,
                                 distribution,
                                 rng,
                             )
+                        };
+                        if intersection.is_outer_to_inner {
+                            refracted_color.component_mul(&primitive.color)
                         } else {
-                            let refracted_color = {
-                                let cosine2 = (1.0 - sine2).sqrt();
-                                let new_dir = (eta1 / eta2) * ray.direction.normalize()
-                                    + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
-                                get_ray_color(
-                                    &Ray {
-                                        origin: corrected_point_forward,
-                                        direction: new_dir,
-                                    },
-                                    scene,
-                                    recursion_depth - 1,
-                                    distribution,
-                                    rng,
-                                )
-                            };
-                            if intersection.is_outer_to_inner {
-                                refracted_color.component_mul(&primitive.color)
-                            } else {
-                                refracted_color
-                            }
+                            refracted_color
                         }
                     }
                 }
             }
-        }
+        },
         None => scene.bg_color,
     }
 }
@@ -221,12 +216,11 @@ fn get_reflection_color(
     scene: &Scene,
     recursion_depth: i32,
     intersection: &Intersection,
-    intersection_point: Vec3f,
+    corrected_point: Vec3f,
     distribution: &dyn SampleDistribution,
     rng: &mut ThreadRng,
 ) -> Vec3f {
     let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
-    let corrected_point = intersection_point + intersection.normal * EPS;
     let reflection_ray = Ray {
         origin: corrected_point,
         direction: reflected_direction,

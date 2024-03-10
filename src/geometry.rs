@@ -38,7 +38,7 @@ pub enum Material {
     Diffused,
 }
 
-pub static EPS: f64 = 0.0001;
+pub static EPS: f64 = 0.00001;
 
 fn intersect(ray: Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection> {
     let mut intersections = intersect_all_points(ray, shape, upper_bound);
