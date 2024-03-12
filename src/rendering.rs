@@ -97,31 +97,20 @@ fn get_ray_color(
             Material::Diffused => {
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
-                let (rnd_vec, pdf) = loop {
-                    let rnd_vec = distribution.sample_unit_vector(
-                        &corrected_point,
-                        &intersection.normal,
+                let rnd_vec =
+                    distribution.sample_unit_vector(&corrected_point, &intersection.normal, rng);
+                let pdf = distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
+                if pdf > 0.0 && rnd_vec.dot(&intersection.normal) > 0.0 {
+                    let color_refl = get_ray_color(
+                        &Ray {
+                            origin: corrected_point,
+                            direction: rnd_vec,
+                        },
+                        scene,
+                        recursion_depth - 1,
+                        distribution,
                         rng,
                     );
-                    let pdf = distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
-                    if pdf > 0.0 {
-                        break (rnd_vec, pdf);
-                    } else {
-                        log::info!("Failed a sampling (probably a floating-point error)");
-                    }
-                };
-                assert!(pdf > 0.0, "pdf should be greater then zero!");
-                let color_refl = get_ray_color(
-                    &Ray {
-                        origin: corrected_point,
-                        direction: rnd_vec,
-                    },
-                    scene,
-                    recursion_depth - 1,
-                    distribution,
-                    rng,
-                );
-                if rnd_vec.dot(&intersection.normal) > 0.0 {
                     total_color += color_refl.component_mul(&primitive.color)
                         * std::f64::consts::FRAC_1_PI
                         * rnd_vec.dot(&intersection.normal)
