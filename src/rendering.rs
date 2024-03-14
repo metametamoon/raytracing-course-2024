@@ -1,4 +1,4 @@
-use rand::rngs::ThreadRng;
+use rand::Rng;
 use std::f64::consts::PI;
 
 use crate::distributions::CosineWeightedDistribution;
@@ -15,6 +15,9 @@ use crate::geometry::Vec3f;
 use crate::geometry::EPS;
 use crate::scene::{Primitive, Scene};
 use rand_distr::{Distribution, Normal};
+use rand_pcg::Pcg32;
+
+type RandGenType = Pcg32;
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let sample_distribution = MixDistribution {
@@ -25,7 +28,7 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                     .primitives
                     .iter()
                     .filter_map(|primitive| {
-                        let result: Box<dyn SampleDistribution> =
+                        let result: Box<dyn SampleDistribution<Pcg32>> =
                             Box::new(LightSamplingDistribution {
                                 object3d: primitive.object3d.clone(),
                             });
@@ -42,13 +45,13 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     };
 
     let mut result = Vec::<u8>::new();
-    let mut rng = rand::thread_rng();
+    let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
     for y in 0..scene.height {
         for x in 0..scene.width {
             let color = {
                 let total_color = (0..scene.samples)
                     .map(|_: i32| {
-                        let ray_to_pixel = get_ray_to_pixel(x, y, scene);
+                        let ray_to_pixel = get_ray_to_pixel(x, y, scene, &mut rng);
                         get_ray_color(
                             &ray_to_pixel,
                             scene,
@@ -67,9 +70,9 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     result
 }
 
-fn get_ray_to_pixel(x: i32, y: i32, scene: &Scene) -> Ray {
-    let real_x = x as f64 + fastrand::f64();
-    let real_y = y as f64 + fastrand::f64();
+fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
+    let real_x = x as f64 + rng.gen::<f64>();
+    let real_y = y as f64 + rng.gen::<f64>();
     let w = scene.width as f64;
     let h = scene.height as f64;
     let px = (2.0 * real_x / w - 1.0) * (scene.camera_fov_x * 0.5).tan();
@@ -86,8 +89,8 @@ fn get_ray_color(
     ray: &Ray,
     scene: &Scene,
     recursion_depth: i32,
-    distribution: &dyn SampleDistribution,
-    rng: &mut ThreadRng,
+    distribution: &dyn SampleDistribution<RandGenType>,
+    rng: &mut RandGenType,
 ) -> Vec3f {
     if recursion_depth <= 0 {
         return Vec3f::default();
@@ -161,7 +164,7 @@ fn get_ray_color(
                 } else {
                     let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                     let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                    if fastrand::f64() < reflected {
+                    if rng.gen::<f64>() < reflected {
                         get_reflection_color(
                             ray,
                             scene,
@@ -206,8 +209,8 @@ fn get_reflection_color(
     recursion_depth: i32,
     intersection: &Intersection,
     corrected_point: Vec3f,
-    distribution: &dyn SampleDistribution,
-    rng: &mut ThreadRng,
+    distribution: &dyn SampleDistribution<RandGenType>,
+    rng: &mut RandGenType,
 ) -> Vec3f {
     let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
     let reflection_ray = Ray {

@@ -21,7 +21,7 @@ fn random_unit_vec(rng: &mut ThreadRng) -> Vec3f {
     .normalize()
 }
 
-fn test_distribution(distribution: impl SampleDistribution) {
+fn test_distribution(distribution: impl SampleDistribution<ThreadRng>) {
     let mut rng = rand::thread_rng();
     let normal = Vec3f::x();
     let point = Vec3f::default();
