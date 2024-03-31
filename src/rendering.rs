@@ -32,9 +32,10 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                                 object3d: primitive.object3d.clone(),
                             });
                         match primitive.object3d.shape {
-                            Shape3D::Plane { norm: _ } => None,
                             Shape3D::Ellipsoid { r: _ } => Some(result),
                             Shape3D::Box { s: _ } => Some(result),
+                            Shape3D::Triangle { a: _, b: _, c: _ } => Some(result),
+                            Shape3D::Plane { norm: _ } => None,
                         }
                     })
                     .collect(),
@@ -45,6 +46,7 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let mut result = Vec::<u8>::new();
     let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
     for y in 0..scene.height {
+        dbg!(y);
         for x in 0..scene.width {
             let color = {
                 let total_color = (0..scene.samples)
@@ -96,6 +98,12 @@ fn get_ray_color(
     match intersect_ray_with_scene(ray, scene) {
         Some((primitive, intersection)) => match primitive.material {
             Material::Diffused => {
+                // if recursion_depth == scene.ray_depth {
+                //     if let Shape3D::Triangle { .. } = primitive.object3d.shape {
+                //         let _u = 0;
+                //         println!("Triangle!");
+                //     }
+                // }
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
                 let rnd_vec =
@@ -250,13 +258,6 @@ fn intersect_ray_with_scene<'a>(
             result = Some((plane_primitive, intersection));
         }
     }
-    // for primitive in &scene.primitives {
-    //     if let Some(intersection) = intersect_ray_with_object3d(_ray, &primitive.object3d, min_dist)
-    //     {
-    //         min_dist = intersection.offset;
-    //         result = Some((primitive, intersection))
-    //     }
-    // }
     result
 }
 

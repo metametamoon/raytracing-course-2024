@@ -1,4 +1,5 @@
 use arrayvec::ArrayVec;
+use na::Matrix3;
 use nalgebra::{UnitQuaternion, Vector3};
 
 pub type Fp = f64;
@@ -25,6 +26,7 @@ pub enum Shape3D {
     Plane { norm: Vec3f },
     Ellipsoid { r: Vec3f },
     Box { s: Vec3f },
+    Triangle { a: Vec3f, b: Vec3f, c: Vec3f },
 }
 
 #[derive(Clone, Debug)]
@@ -70,6 +72,47 @@ fn intersect_all_points(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> ArrayVec
         Shape3D::Plane { norm } => intersect_with_plane(ray, upper_bound, norm),
         Shape3D::Ellipsoid { r } => intersect_with_ellipsoid(ray, upper_bound, r),
         Shape3D::Box { s } => intersect_with_box(ray, upper_bound, s),
+        Shape3D::Triangle {
+            a: p1,
+            b: p2,
+            c: p3,
+        } => intersect_with_triangle(ray, upper_bound, p1, p2, p3),
+    }
+}
+
+fn intersect_with_triangle(
+    ray: &Ray,
+    upper_bound: Fp,
+    a: &Vec3f,
+    b: &Vec3f,
+    c: &Vec3f,
+) -> ArrayVec<Intersection, 2> {
+    let mut s = Matrix3::<Fp>::zeros();
+    s.set_column(0, &(b - a));
+    s.set_column(1, &(c - a));
+    s.set_column(2, &-ray.direction);
+
+    let mut result = ArrayVec::<Intersection, 2>::new();
+    match s.try_inverse() {
+        Some(s_inv) => {
+            let uvt = s_inv * (ray.origin - a);
+            let (u, v, t) = (uvt.x, uvt.y, uvt.z);
+            if 0.0 <= u && 0.0 <= v && u + v <= 1.0 && 0.0 < t && t < upper_bound {
+                let outer_normal = (b - a).cross(&(c - a)).normalize();
+                let (is_outer_to_inner, normal) = if outer_normal.dot(&ray.direction) < 0.0 {
+                    (true, outer_normal)
+                } else {
+                    (false, -outer_normal)
+                };
+                result.push(Intersection {
+                    offset: t,
+                    normal,
+                    is_outer_to_inner,
+                })
+            }
+            result
+        }
+        None => result,
     }
 }
 
@@ -92,7 +135,7 @@ fn intersect_with_box(ray: &Ray, upper_bound: Fp, s: &Vec3f) -> ArrayVec<Interse
 
     let t_min = Fp::max(t_x0, Fp::max(t_y0, t_z0));
     let t_max = Fp::min(t_x1, Fp::min(t_y1, t_z1));
-    if t_min < t_max {
+    if t_min <= t_max {
         let mut result = ArrayVec::<Intersection, 2>::new();
         let calculate_norm = |p_on_box: Vec3f| -> Vec3f {
             if s.x - p_on_box.x.abs() < EPS {

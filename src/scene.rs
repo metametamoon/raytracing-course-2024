@@ -154,6 +154,21 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                 current_primitive.as_mut().unwrap().object3d.shape =
                     Shape3D::Box { s: get_vector() }
             }
+            "TRIANGLE" => {
+                current_primitive.as_mut().unwrap().object3d.shape = Shape3D::Triangle {
+                    a: get_vector(),
+                    b: Vec3f::new(
+                        tokens[4].parse().unwrap(),
+                        tokens[5].parse().unwrap(),
+                        tokens[6].parse().unwrap(),
+                    ),
+                    c: Vec3f::new(
+                        tokens[7].parse().unwrap(),
+                        tokens[8].parse().unwrap(),
+                        tokens[9].parse().unwrap(),
+                    ),
+                }
+            }
             "POSITION" => {
                 current_primitive.as_mut().unwrap().object3d.position = get_vector();
             }

@@ -1,4 +1,4 @@
-use crate::geometry::{Object3D, Shape3D, Vec3f, FP_INF, FP_NEG_INF};
+use crate::geometry::{Object3D, Shape3D, Vec3f, EPS, FP_INF, FP_NEG_INF};
 use crate::scene::Primitive;
 
 #[derive(Clone, Debug, Default)]
@@ -8,17 +8,22 @@ pub struct AABB {
 }
 
 fn calculate_aabb_for_shape(shape3d: &Shape3D) -> AABB {
+    let eps_vec = Vec3f::new(EPS, EPS, EPS);
     match shape3d {
         Shape3D::Plane { norm: _norm } => {
             panic!("AABB on plane")
         }
         Shape3D::Ellipsoid { r } => AABB {
-            min: -r,
-            max: r.clone(),
+            min: -r - eps_vec,
+            max: r + eps_vec,
         },
         Shape3D::Box { s } => AABB {
-            min: -s,
-            max: s.clone(),
+            min: -s - eps_vec,
+            max: s + eps_vec,
+        },
+        Shape3D::Triangle { a, b, c } => AABB {
+            min: a.inf(b).inf(c) - eps_vec,
+            max: a.sup(b).sup(c) + eps_vec,
         },
     }
 }

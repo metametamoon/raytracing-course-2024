@@ -78,6 +78,10 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
             let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
             1.0 / area
         }
+        Shape3D::Triangle { a, b, c } => {
+            let area = (b - a).cross(&(c - a)).norm() * 0.5;
+            1.0 / area
+        }
     }
 }
 
@@ -119,6 +123,15 @@ impl<R: Rng> SampleDistribution<R> for LightSamplingDistribution {
                         s.z * rnd_sign,
                     )
                 }
+            }
+            Shape3D::Triangle { a, b, c } => {
+                let (u, v) = (rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0));
+                let (u, v) = if u + v < 1.0 {
+                    (u, v)
+                } else {
+                    (1.0 - u, 1.0 - v)
+                };
+                a + (b - a) * u + (c - a) * v
             }
         };
         let global_coords_point =
