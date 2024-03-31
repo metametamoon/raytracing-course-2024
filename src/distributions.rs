@@ -1,13 +1,13 @@
-use rand::rngs::ThreadRng;
-use rand::{Rng, RngCore};
-
+use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
-use crate::geometry::{intersect_ray_with_object3d_all_points, Object3D, Ray, Shape3D, Vec3f, EPS};
+use crate::geometry::{
+    intersect_ray_with_object3d_all_points, Fp, Object3D, Ray, Shape3D, Vec3f, EPS, FP_PI,
+};
 
 pub trait SampleDistribution<R: Rng> {
     fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f;
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64;
+    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp;
 }
 
 pub struct SemisphereUniform;
@@ -38,13 +38,13 @@ impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
         }
     }
 
-    fn pdf(&self, _point: &Vec3f, _normal: &Vec3f, _direction: &Vec3f) -> f64 {
-        1.0 / (2.0 * std::f64::consts::PI)
+    fn pdf(&self, _point: &Vec3f, _normal: &Vec3f, _direction: &Vec3f) -> Fp {
+        1.0 / (2.0 * FP_PI)
     }
 }
 
 impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, _point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let uniform = Vec3f::new(
             normal_distr.sample(rng),
@@ -53,18 +53,16 @@ impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
         )
         .normalize();
         let result = (uniform + normal).normalize();
-        // assert!(self.pdf(point, normal, &result) > 0.0);
         result
     }
 
-    fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {
-        f64::max(0.0, direction.normalize().dot(normal)) / std::f64::consts::PI
+    fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp {
+        Fp::max(0.0, direction.normalize().dot(normal)) / FP_PI
     }
 }
 
-fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
+fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
     match shape {
-        Shape3D::None => 0.0,
         Shape3D::Plane { .. } => 0.0,
         Shape3D::Ellipsoid { r } => {
             let n = local_coords.component_div(r);
@@ -74,7 +72,7 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
             let root =
                 ((n.x * r.y * r.z).powi(2) + (r.x * n.y * r.z).powi(2) + (r.x * r.y * n.z).powi(2))
                     .sqrt();
-            1.0 / (4.0 * std::f64::consts::PI * root)
+            1.0 / (4.0 * FP_PI * root)
         }
         Shape3D::Box { s } => {
             let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
@@ -86,7 +84,6 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> f64 {
 impl<R: Rng> SampleDistribution<R> for LightSamplingDistribution {
     fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Vec3f {
         let local_coords_point = match self.object3d.shape {
-            Shape3D::None => panic!("Shape None!"),
             Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
             Shape3D::Ellipsoid { r } => {
                 let normal_distr = Normal::new(0.0, 1.0).unwrap();
@@ -130,7 +127,7 @@ impl<R: Rng> SampleDistribution<R> for LightSamplingDistribution {
         (global_coords_point - point).normalize()
     }
 
-    fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> f64 {
+    fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> Fp {
         let ray = Ray {
             origin: *point,
             direction: *direction,
@@ -160,12 +157,12 @@ impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
         self.distributions[rand_idx].sample_unit_vector(point, normal, rng)
     }
 
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> f64 {
+    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp {
         let ans = self
             .distributions
             .iter()
             .map(|distr| distr.pdf(point, normal, direction))
-            .sum::<f64>();
-        ans / (self.distributions.len() as f64)
+            .sum::<Fp>();
+        ans / (self.distributions.len() as Fp)
     }
 }

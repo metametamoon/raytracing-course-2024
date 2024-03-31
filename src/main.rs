@@ -1,10 +1,13 @@
+#![feature(iter_partition_in_place)]
+
+mod aabb;
+mod bvh;
 mod distributions;
 mod geometry;
 mod rendering;
 mod scene;
 #[cfg(test)]
 mod tests;
-
 extern crate nalgebra as na;
 
 use crate::rendering::render_scene;
@@ -33,8 +36,10 @@ fn main() {
         .map(|x| x.trim())
         .collect::<Vec<&str>>();
     let scene = parse_file_content(file_lines);
+    println!("{:#?}", scene);
     let start = Instant::now();
     let rendered_scene = render_scene(&scene);
+    dbg!(rendered_scene.len());
     let duration = start.elapsed();
     println!("Rendering took {:?}", duration);
     let mut out_file = fs::OpenOptions::new()

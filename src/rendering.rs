@@ -1,21 +1,20 @@
 use rand::Rng;
-use std::f64::consts::PI;
+use rand_pcg::Pcg32;
 
+use crate::bvh::intersect_with_bvh_all_points;
 use crate::distributions::CosineWeightedDistribution;
 use crate::distributions::LightSamplingDistribution;
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
-use crate::geometry::get_reflection_ray;
-use crate::geometry::intersect_ray_with_object3d;
-use crate::geometry::Intersection;
 use crate::geometry::Material;
 use crate::geometry::Ray;
 use crate::geometry::Shape3D;
 use crate::geometry::Vec3f;
 use crate::geometry::EPS;
+use crate::geometry::FP_PI;
+use crate::geometry::{get_reflection_ray, Fp};
+use crate::geometry::{intersect_ray_with_object3d, Intersection};
 use crate::scene::{Primitive, Scene};
-use rand_distr::{Distribution, Normal};
-use rand_pcg::Pcg32;
 
 type RandGenType = Pcg32;
 
@@ -25,7 +24,7 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
             Box::new(CosineWeightedDistribution),
             Box::new(MixDistribution {
                 distributions: scene
-                    .primitives
+                    .primitives_no_planes
                     .iter()
                     .filter_map(|primitive| {
                         let result: Box<dyn SampleDistribution<Pcg32>> =
@@ -33,7 +32,6 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                                 object3d: primitive.object3d.clone(),
                             });
                         match primitive.object3d.shape {
-                            Shape3D::None => None,
                             Shape3D::Plane { norm: _ } => None,
                             Shape3D::Ellipsoid { r: _ } => Some(result),
                             Shape3D::Box { s: _ } => Some(result),
@@ -62,7 +60,7 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                     })
                     .reduce(|x, y| x + y)
                     .unwrap();
-                total_color / scene.samples as f64
+                total_color / scene.samples as Fp
             };
             result.extend(color_to_pixel(color));
         }
@@ -71,13 +69,13 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
 }
 
 fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
-    let real_x = x as f64 + rng.gen::<f64>();
-    let real_y = y as f64 + rng.gen::<f64>();
-    let w = scene.width as f64;
-    let h = scene.height as f64;
+    let real_x = x as Fp + rng.gen::<Fp>();
+    let real_y = y as Fp + rng.gen::<Fp>();
+    let w = scene.width as Fp;
+    let h = scene.height as Fp;
     let px = (2.0 * real_x / w - 1.0) * (scene.camera_fov_x * 0.5).tan();
     let py = -(2.0 * real_y / h - 1.0) * (scene.camera_fov_y * 0.5).tan();
-    let pz = 1.0f64;
+    let pz = 1.0 as Fp;
     let direction = px * scene.camera_right + py * scene.camera_up + pz * scene.camera_forward;
     Ray {
         origin: scene.camera_position,
@@ -115,7 +113,7 @@ fn get_ray_color(
                         rng,
                     );
                     total_color += color_refl.component_mul(&primitive.color)
-                        * std::f64::consts::FRAC_1_PI
+                        * (1.0 / FP_PI)
                         * rnd_vec.dot(&intersection.normal)
                         * (1.0 / pdf);
                 }
@@ -139,7 +137,7 @@ fn get_ray_color(
             }
             Material::Dielectric => {
                 let cosine = -ray.direction.normalize().dot(&intersection.normal);
-                let cosine = f64::min(cosine, 1.0);
+                let cosine = Fp::min(cosine, 1.0);
                 let (eta1, eta2) = if intersection.is_outer_to_inner {
                     (1.0, primitive.ior)
                 } else {
@@ -164,7 +162,7 @@ fn get_ray_color(
                 } else {
                     let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
                     let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                    if rng.gen::<f64>() < reflected {
+                    if rng.gen::<Fp>() < reflected {
                         get_reflection_color(
                             ray,
                             scene,
@@ -230,15 +228,35 @@ fn intersect_ray_with_scene<'a>(
     ray: &Ray,
     scene: &'a Scene,
 ) -> Option<(&'a Primitive, Intersection)> {
-    let mut min_dist = f64::INFINITY;
+    let mut min_dist = Fp::INFINITY;
     let mut result = None;
-    for primitive in &scene.primitives {
-        if let Some(intersection) = intersect_ray_with_object3d(ray, &primitive.object3d, min_dist)
-        {
-            min_dist = intersection.offset;
-            result = Some((primitive, intersection))
+    let good = intersect_with_bvh_all_points(
+        ray,
+        &scene.primitives_no_planes,
+        &scene.bvh_nodes,
+        &scene.bvh_nodes.len() - 1,
+    );
+    for (intersection, _ray, primitive) in good {
+        if !intersection.is_empty() {
+            min_dist = intersection[0].offset;
+            result = Some((primitive, intersection[0].clone()))
         }
     }
+    for plane_primitive in &scene.infinite_primitives {
+        if let Some(intersection) =
+            intersect_ray_with_object3d(ray, &plane_primitive.object3d, min_dist)
+        {
+            min_dist = intersection.offset;
+            result = Some((plane_primitive, intersection));
+        }
+    }
+    // for primitive in &scene.primitives {
+    //     if let Some(intersection) = intersect_ray_with_object3d(_ray, &primitive.object3d, min_dist)
+    //     {
+    //         min_dist = intersection.offset;
+    //         result = Some((primitive, intersection))
+    //     }
+    // }
     result
 }
 
@@ -276,54 +294,4 @@ fn color_to_pixel(color: Vec3f) -> [u8; 3] {
         (gamma_corrected.y * 255.0).round() as u8,
         (gamma_corrected.z * 255.0).round() as u8,
     ]
-}
-
-fn random_vector_norm(normal: &Vec3f) -> Vec3f {
-    let mut rng = rand::thread_rng();
-    let normal_distr = Normal::new(0.0, 1.0).unwrap();
-    let result = Vec3f::new(
-        normal_distr.sample(&mut rng),
-        normal_distr.sample(&mut rng),
-        normal_distr.sample(&mut rng),
-    )
-    .normalize();
-    if result.dot(normal) > 0.0 {
-        result
-    } else {
-        -result
-    }
-}
-
-fn random_vector_loop(normal: &Vec3f) -> Vec3f {
-    loop {
-        let v = Vec3f::new(
-            fastrand::f64() * 2.0 - 1.0,
-            fastrand::f64() * 2.0 - 1.0,
-            fastrand::f64() * 2.0 - 1.0,
-        );
-        let norm = v.norm();
-        if norm <= 1.0 {
-            let result = v.unscale(norm);
-            if result.dot(normal) > 0.0 {
-                return result;
-            } else {
-                return -result;
-            }
-        }
-    }
-}
-
-// the worst ever algo
-fn random_vector_trigonometry(normal: &Vec3f) -> Vec3f {
-    let theta: f64 = (fastrand::f64() * 2.0 - 1.0).acos();
-    let phi: f64 = 2.0 * PI * fastrand::f64();
-    let x = theta.sin() * phi.cos();
-    let y = theta.sin() * phi.sin();
-    let z = theta.cos();
-    let result = Vec3f::new(x, y, z);
-    if result.dot(normal) > 0.0 {
-        result
-    } else {
-        -result
-    }
 }

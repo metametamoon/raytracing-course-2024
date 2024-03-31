@@ -1,7 +1,7 @@
 use crate::distributions::{
     CosineWeightedDistribution, LightSamplingDistribution, SampleDistribution,
 };
-use crate::geometry::{Object3D, Shape3D, Vec3f};
+use crate::geometry::{Fp, Object3D, Shape3D, Vec3f};
 use na::{Quaternion, UnitQuaternion};
 use rand::distributions::Distribution;
 use rand::prelude::ThreadRng;
@@ -29,7 +29,7 @@ fn test_distribution(distribution: impl SampleDistribution<ThreadRng>) {
     let results = (0..n)
         .map(|_| distribution.pdf(&point, &normal, &random_unit_vec(&mut rng)))
         .collect::<Vec<_>>();
-    let avg = results.iter().sum::<f64>() / (n as f64);
+    let avg = results.iter().sum::<Fp>() / (n as Fp);
     let sphere_area = 4.0 * PI;
     println!("avg={}", avg * sphere_area);
     if (avg * sphere_area - 1.0) > 1.0 {

@@ -1,7 +1,11 @@
 use arrayvec::ArrayVec;
 use nalgebra::{UnitQuaternion, Vector3};
 
-pub type Vec3f = Vector3<f64>;
+pub type Fp = f64;
+pub const FP_PI: Fp = std::f64::consts::PI;
+pub const FP_INF: Fp = f64::INFINITY;
+pub const FP_NEG_INF: Fp = f64::NEG_INFINITY;
+pub type Vec3f = Vector3<Fp>;
 
 #[derive(Clone, Debug)]
 pub struct Ray {
@@ -11,14 +15,13 @@ pub struct Ray {
 
 #[derive(Default, Clone)]
 pub struct Intersection {
-    pub offset: f64,
+    pub offset: Fp,
     pub normal: Vec3f,
     pub is_outer_to_inner: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum Shape3D {
-    None,
     Plane { norm: Vec3f },
     Ellipsoid { r: Vec3f },
     Box { s: Vec3f },
@@ -28,7 +31,7 @@ pub enum Shape3D {
 pub struct Object3D {
     pub shape: Shape3D,
     pub position: Vec3f,
-    pub rotation: UnitQuaternion<f64>,
+    pub rotation: UnitQuaternion<Fp>,
 }
 
 #[derive(Clone, Debug)]
@@ -38,9 +41,9 @@ pub enum Material {
     Diffused,
 }
 
-pub static EPS: f64 = 0.00001;
+pub static EPS: Fp = 0.00001;
 
-fn intersect(ray: &Ray, shape: &Shape3D, upper_bound: f64) -> Option<Intersection> {
+fn intersect(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> Option<Intersection> {
     let mut intersections = intersect_all_points(ray, shape, upper_bound);
     if !intersections.is_empty() {
         Some(intersections.remove(0))
@@ -54,7 +57,7 @@ pub fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
     ray + normal * projection * 2.0
 }
 
-fn sort2(x: f64, y: f64) -> (f64, f64) {
+fn sort2(x: Fp, y: Fp) -> (Fp, Fp) {
     if x < y {
         (x, y)
     } else {
@@ -62,18 +65,15 @@ fn sort2(x: f64, y: f64) -> (f64, f64) {
     }
 }
 
-fn intersect_all_points(ray: &Ray, shape: &Shape3D, upper_bound: f64) -> ArrayVec<Intersection, 2> {
+fn intersect_all_points(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> ArrayVec<Intersection, 2> {
     match shape {
-        Shape3D::None => {
-            panic!("Intersect with None")
-        }
         Shape3D::Plane { norm } => intersect_with_plane(ray, upper_bound, norm),
         Shape3D::Ellipsoid { r } => intersect_with_ellipsoid(ray, upper_bound, r),
         Shape3D::Box { s } => intersect_with_box(ray, upper_bound, s),
     }
 }
 
-fn intersect_with_box(ray: &Ray, upper_bound: f64, s: &Vec3f) -> ArrayVec<Intersection, 2> {
+fn intersect_with_box(ray: &Ray, upper_bound: Fp, s: &Vec3f) -> ArrayVec<Intersection, 2> {
     let sx = s.x;
     let sy = s.y;
     let sz = s.z;
@@ -90,8 +90,8 @@ fn intersect_with_box(ray: &Ray, upper_bound: f64, s: &Vec3f) -> ArrayVec<Inters
         (sz - ray.origin.z) / (ray.direction.z + 0.001 * EPS),
     );
 
-    let t_min = f64::max(t_x0, f64::max(t_y0, t_z0));
-    let t_max = f64::min(t_x1, f64::min(t_y1, t_z1));
+    let t_min = Fp::max(t_x0, Fp::max(t_y0, t_z0));
+    let t_max = Fp::min(t_x1, Fp::min(t_y1, t_z1));
     if t_min < t_max {
         let mut result = ArrayVec::<Intersection, 2>::new();
         let calculate_norm = |p_on_box: Vec3f| -> Vec3f {
@@ -127,7 +127,7 @@ fn intersect_with_box(ray: &Ray, upper_bound: f64, s: &Vec3f) -> ArrayVec<Inters
     }
 }
 
-fn intersect_with_ellipsoid(ray: &Ray, upper_bound: f64, r: &Vec3f) -> ArrayVec<Intersection, 2> {
+fn intersect_with_ellipsoid(ray: &Ray, upper_bound: Fp, r: &Vec3f) -> ArrayVec<Intersection, 2> {
     let d1 = ray.direction.component_div(r);
     let o1 = ray.origin.component_div(r);
     let a = d1.dot(&d1);
@@ -164,7 +164,7 @@ fn intersect_with_ellipsoid(ray: &Ray, upper_bound: f64, r: &Vec3f) -> ArrayVec<
     }
 }
 
-fn intersect_with_plane(ray: &Ray, upper_bound: f64, norm: &Vec3f) -> ArrayVec<Intersection, 2> {
+fn intersect_with_plane(ray: &Ray, upper_bound: Fp, norm: &Vec3f) -> ArrayVec<Intersection, 2> {
     let x = norm.dot(&ray.direction);
     if x == 0.0 {
         ArrayVec::new()
@@ -189,7 +189,7 @@ fn intersect_with_plane(ray: &Ray, upper_bound: f64, norm: &Vec3f) -> ArrayVec<I
 pub fn intersect_ray_with_object3d(
     ray: &Ray,
     object: &Object3D,
-    min_dist: f64,
+    min_dist: Fp,
 ) -> Option<Intersection> {
     let transposed_ray = Ray {
         origin: ray.origin - object.position,
@@ -232,7 +232,7 @@ pub fn intersect_ray_with_object3d_all_points(
             .conjugate()
             .transform_vector(&transposed_ray.direction),
     };
-    let mut result = intersect_all_points(&rotated_ray, &object3d.shape, f64::INFINITY);
+    let mut result = intersect_all_points(&rotated_ray, &object3d.shape, Fp::INFINITY);
     for intersection in &mut result {
         intersection.normal = object3d.rotation.transform_vector(&intersection.normal);
     }
