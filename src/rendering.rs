@@ -219,12 +219,14 @@ fn intersect_ray_with_scene<'a>(
     ray: &Ray,
     scene: &'a Scene,
 ) -> Option<(&'a Primitive, Intersection)> {
-    let mut min_dist = Fp::INFINITY;
+    let mut latest_intersection_offset = Fp::INFINITY;
     let mut result = None;
     let good = intersect_with_bvh_all_points(ray, &scene.bvh_primitives_no_planes);
     for bvh_intersection in good {
-        if !bvh_intersection.intersections.is_empty() {
-            min_dist = bvh_intersection.intersections[0].offset;
+        if !bvh_intersection.intersections.is_empty()
+            && bvh_intersection.intersections[0].offset < latest_intersection_offset
+        {
+            latest_intersection_offset = bvh_intersection.intersections[0].offset;
             result = Some((
                 bvh_intersection.primitive,
                 bvh_intersection.intersections[0].clone(),
@@ -233,10 +235,12 @@ fn intersect_ray_with_scene<'a>(
     }
     for plane_primitive in &scene.infinite_primitives {
         if let Some(intersection) =
-            intersect_ray_with_object3d(ray, &plane_primitive.object3d, min_dist)
+            intersect_ray_with_object3d(ray, &plane_primitive.object3d, latest_intersection_offset)
         {
-            min_dist = intersection.offset;
-            result = Some((plane_primitive, intersection));
+            if intersection.offset < latest_intersection_offset {
+                latest_intersection_offset = intersection.offset;
+                result = Some((plane_primitive, intersection));
+            }
         }
     }
     result

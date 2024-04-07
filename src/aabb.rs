@@ -36,6 +36,18 @@ impl AABB {
         let z = diff.z;
         x * y + y * z + z * x
     }
+
+    pub fn contains(&self, aabb: &AABB) -> bool {
+        for coord in 0..3 {
+            if aabb.min[(coord, 0)] < self.min[(coord, 0)] {
+                return false;
+            }
+            if aabb.max[(coord, 0)] > self.max[(coord, 0)] {
+                return false;
+            }
+        }
+        return true;
+    }
 }
 
 fn calculate_aabb_for_shape(shape3d: &Shape3D) -> AABB {

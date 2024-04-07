@@ -232,8 +232,10 @@ pub fn validate_bvh(bvh_tree: &BvhTree) {
                 );
             }
         } else {
-            // let left_child = &bvh_tree.nodes[bvh_node.left_child_index];
-            // let right_child = &bvh_tree.nodes[bvh_node.right_child_index];
+            let left_child = &bvh_tree.nodes[bvh_node.left_child_index];
+            let right_child = &bvh_tree.nodes[bvh_node.right_child_index];
+            assert!(bvh_node.aabb.contains(&left_child.aabb));
+            assert!(bvh_node.aabb.contains(&right_child.aabb));
         }
     }
 }
