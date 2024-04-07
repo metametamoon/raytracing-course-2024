@@ -1,6 +1,6 @@
 use na::{Quaternion, UnitQuaternion, Vector3};
 
-use crate::aabb::{calculate_aabb_for_object, AABB};
+use crate::aabb::{calculate_aabb_for_object, Aabb};
 use crate::bvh::{create_bvh_tree, BvhTree};
 use crate::geometry::{Fp, Material, Object3D, Shape3D, Vec3f};
 
@@ -19,7 +19,7 @@ pub struct LightSource {
 #[derive(Clone, Debug)]
 pub struct Primitive {
     pub object3d: Object3D,
-    pub aabb: AABB,
+    pub aabb: Aabb,
     pub color: Vec3f,
     pub material: Material,
     pub ior: Fp,

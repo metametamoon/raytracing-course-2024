@@ -108,7 +108,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
                 let (wx, wy, wz) = (4.0 * s.y * s.z, 4.0 * s.x * s.z, 4.0 * s.x * s.y);
                 let w = wx + wy + wz;
                 let x = rng.gen_range(0.0..w);
-                let rnd_sign = if fastrand::bool() { 1.0 } else { -1.0 };
+                let rnd_sign = if rng.gen_bool(0.5) { 1.0 } else { -1.0 };
                 if x < wx {
                     Vec3f::new(
                         s.x * rnd_sign,

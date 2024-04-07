@@ -7,7 +7,6 @@ use rand::distributions::Distribution;
 use rand::prelude::ThreadRng;
 use rand::Rng;
 use rand_distr::Normal;
-use std::default::Default;
 use std::f64::consts::PI;
 
 fn random_unit_vec(rng: &mut ThreadRng) -> Vec3f {

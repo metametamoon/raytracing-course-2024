@@ -4,7 +4,7 @@ use rand_xoshiro::Xoshiro256StarStar;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 
-use crate::bvh::{intersect_with_bvh_all_points, validate_bvh};
+use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
 use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
@@ -30,12 +30,10 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
 
     let sample_distr = &sample_distribution;
 
-    let result = (0..scene.height)
+    (0..scene.height)
         .collect::<Vec<_>>()
-        // .iter()
         .par_iter()
         .flat_map_iter(|y| {
-            dbg!(y);
             let dist = sample_distr;
             let mut rng: Xoshiro256StarStar =
                 Xoshiro256StarStar::seed_from_u64((scene.width * y) as u64);
@@ -50,12 +48,10 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                         .unwrap();
                     total_color / scene.samples as Fp
                 };
-                let pixel = color_to_pixel(color);
-                pixel
+                color_to_pixel(color)
             })
         })
-        .collect::<Vec<_>>();
-    result
+        .collect::<Vec<_>>()
 }
 
 fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
@@ -221,17 +217,14 @@ fn intersect_ray_with_scene<'a>(
 ) -> Option<(&'a Primitive, Intersection)> {
     let mut latest_intersection_offset = Fp::INFINITY;
     let mut result = None;
-    let good = intersect_with_bvh_all_points(ray, &scene.bvh_primitives_no_planes);
-    for bvh_intersection in good {
-        if !bvh_intersection.intersections.is_empty()
-            && bvh_intersection.intersections[0].offset < latest_intersection_offset
-        {
-            latest_intersection_offset = bvh_intersection.intersections[0].offset;
-            result = Some((
-                bvh_intersection.primitive,
-                bvh_intersection.intersections[0].clone(),
-            ))
-        }
+    let maybe_intersection =
+        interesect_with_bvh_nearest_point(ray, &scene.bvh_primitives_no_planes);
+    if let Some(bvh_intersection) = maybe_intersection {
+        latest_intersection_offset = bvh_intersection.intersections[0].offset;
+        result = Some((
+            bvh_intersection.primitive,
+            bvh_intersection.intersections[0].clone(),
+        ))
     }
     for plane_primitive in &scene.infinite_primitives {
         if let Some(intersection) =

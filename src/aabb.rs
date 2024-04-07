@@ -2,28 +2,28 @@ use crate::geometry::{Fp, Object3D, Shape3D, Vec3f, EPS, FP_INF, FP_NEG_INF};
 use crate::scene::Primitive;
 
 #[derive(Clone, Debug)]
-pub struct AABB {
+pub struct Aabb {
     pub min: Vec3f,
     pub max: Vec3f,
 }
 
-impl Default for AABB {
+impl Default for Aabb {
     fn default() -> Self {
-        AABB {
+        Aabb {
             min: Vec3f::new(FP_INF, FP_INF, FP_INF),
             max: Vec3f::new(FP_NEG_INF, FP_NEG_INF, FP_NEG_INF),
         }
     }
 }
-impl AABB {
-    pub fn _extend_point(&self, point: Vec3f) -> AABB {
-        AABB {
+impl Aabb {
+    pub fn _extend_point(&self, point: Vec3f) -> Aabb {
+        Aabb {
             min: self.min.inf(&point),
             max: self.max.sup(&point),
         }
     }
-    pub fn extend_aabb(&self, aabb: &AABB) -> AABB {
-        AABB {
+    pub fn extend_aabb(&self, aabb: &Aabb) -> Aabb {
+        Aabb {
             min: self.min.inf(&aabb.min),
             max: self.max.sup(&aabb.max),
         }
@@ -37,7 +37,7 @@ impl AABB {
         x * y + y * z + z * x
     }
 
-    pub fn contains(&self, aabb: &AABB) -> bool {
+    pub fn contains(&self, aabb: &Aabb) -> bool {
         for coord in 0..3 {
             if aabb.min[(coord, 0)] < self.min[(coord, 0)] {
                 return false;
@@ -46,25 +46,25 @@ impl AABB {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
-fn calculate_aabb_for_shape(shape3d: &Shape3D) -> AABB {
+fn calculate_aabb_for_shape(shape3d: &Shape3D) -> Aabb {
     let eps_vec = Vec3f::new(EPS, EPS, EPS);
     match shape3d {
         Shape3D::Plane { norm: _norm } => {
             panic!("AABB on plane")
         }
-        Shape3D::Ellipsoid { r } => AABB {
+        Shape3D::Ellipsoid { r } => Aabb {
             min: -r - eps_vec,
             max: r + eps_vec,
         },
-        Shape3D::Box { s } => AABB {
+        Shape3D::Box { s } => Aabb {
             min: -s - eps_vec,
             max: s + eps_vec,
         },
-        Shape3D::Triangle { a, b, c } => AABB {
+        Shape3D::Triangle { a, b, c } => Aabb {
             min: a.inf(b).inf(c) - eps_vec,
             max: a.sup(b).sup(c) + eps_vec,
         },
@@ -79,7 +79,7 @@ fn if_then_else<T>(cond: bool, fst: T, snd: T) -> T {
         snd
     }
 }
-pub fn calculate_aabb_for_object(object: &Object3D) -> AABB {
+pub fn calculate_aabb_for_object(object: &Object3D) -> Aabb {
     let mut min = Vec3f::new(FP_INF, FP_INF, FP_INF);
     let mut max = Vec3f::new(FP_NEG_INF, FP_NEG_INF, FP_NEG_INF);
     let shape_aabb = calculate_aabb_for_shape(&object.shape);
@@ -97,11 +97,11 @@ pub fn calculate_aabb_for_object(object: &Object3D) -> AABB {
             }
         }
     }
-    AABB { min, max }
+    Aabb { min, max }
 }
 
-pub fn calculate_aabb(slice: &[Primitive]) -> AABB {
-    let mut result = <AABB as Default>::default();
+pub fn calculate_aabb(slice: &[Primitive]) -> Aabb {
+    let mut result = <Aabb as Default>::default();
     for a in slice {
         match a.object3d.shape {
             Shape3D::Plane { .. } => {

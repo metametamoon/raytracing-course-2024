@@ -1,6 +1,6 @@
 use arrayvec::ArrayVec;
 
-use crate::aabb::{calculate_aabb, calculate_aabb_for_object, AABB};
+use crate::aabb::{calculate_aabb, calculate_aabb_for_object, Aabb};
 use crate::geometry::{
     intersect_ray_with_object3d, intersect_ray_with_object3d_all_points, Fp, Intersection,
     Object3D, Ray, Shape3D, FP_INF,
@@ -9,7 +9,7 @@ use crate::scene::Primitive;
 
 #[derive(Debug, Clone)]
 struct BvhNode {
-    aabb: AABB,
+    aabb: Aabb,
     left_child_index: usize,
     right_child_index: usize,
     content_start: usize,
@@ -84,7 +84,7 @@ fn create_bvh_node(
 }
 
 // returns the length of the first part, if the split was successful
-fn try_split(aabb: &AABB, primitives: &mut [Primitive]) -> Option<usize> {
+fn try_split(aabb: &Aabb, primitives: &mut [Primitive]) -> Option<usize> {
     let n = primitives.len();
     if n <= 4 {
         return None;
@@ -105,8 +105,8 @@ fn try_split(aabb: &AABB, primitives: &mut [Primitive]) -> Option<usize> {
         });
         let mut left_prefixes = vec![];
         let mut right_prefixes = vec![];
-        let mut current_left_prefix = <AABB as Default>::default();
-        let mut current_right_prefix = <AABB as Default>::default();
+        let mut current_left_prefix = <Aabb as Default>::default();
+        let mut current_right_prefix = <Aabb as Default>::default();
         for i in 0..(n - 1) {
             current_left_prefix = current_left_prefix.extend_aabb(&primitives[i].aabb);
             current_right_prefix = current_right_prefix.extend_aabb(&primitives[n - 1 - i].aabb);
@@ -143,7 +143,7 @@ fn try_split(aabb: &AABB, primitives: &mut [Primitive]) -> Option<usize> {
     }
 }
 
-fn intersects(ray: &Ray, aabb: &AABB) -> bool {
+fn intersects(ray: &Ray, aabb: &Aabb) -> bool {
     let object = Object3D {
         shape: Shape3D::Box {
             s: (aabb.max - aabb.min) * 0.5,
@@ -152,6 +152,17 @@ fn intersects(ray: &Ray, aabb: &AABB) -> bool {
         rotation: Default::default(),
     };
     intersect_ray_with_object3d(ray, &object, FP_INF).is_some()
+}
+
+fn get_aabb_intersection(ray: &Ray, aabb: &Aabb) -> Option<Intersection> {
+    let object = Object3D {
+        shape: Shape3D::Box {
+            s: (aabb.max - aabb.min) * 0.5,
+        },
+        position: (aabb.max + aabb.min) * 0.5,
+        rotation: Default::default(),
+    };
+    intersect_ray_with_object3d(ray, &object, FP_INF)
 }
 
 pub struct BvhIntersection<'a> {
@@ -210,6 +221,72 @@ fn intersect_with_bvh_all_points_impl<'a>(
                 bvh_nodes,
                 current_node.right_child_index,
                 result,
+            );
+        }
+    }
+}
+
+pub fn interesect_with_bvh_nearest_point<'a>(
+    ray: &Ray,
+    bvh_tree: &'a BvhTree,
+) -> Option<BvhIntersection<'a>> {
+    let root_index = bvh_tree.nodes.len() - 1;
+    let mut result = None;
+    let mut nearest = FP_INF;
+    intersect_with_bvh_nearest_impl(
+        ray,
+        &bvh_tree.primitives,
+        &bvh_tree.nodes,
+        root_index,
+        &mut result,
+        &mut nearest,
+    );
+    result
+}
+
+fn intersect_with_bvh_nearest_impl<'a>(
+    ray: &Ray,
+    primitives: &'a Vec<Primitive>,
+    bvh_nodes: &Vec<BvhNode>,
+    bvh_node_index: usize,
+    result: &mut Option<BvhIntersection<'a>>,
+    shortest_offset: &mut Fp,
+) {
+    let current_node = &bvh_nodes[bvh_node_index];
+    if let Some(nearest_aabb_intersection) = get_aabb_intersection(ray, &current_node.aabb) {
+        if nearest_aabb_intersection.offset > *shortest_offset {
+            return;
+        }
+        if current_node.left_child_index == usize::MAX {
+            let node_primitives = &primitives[current_node.content_start
+                ..current_node.content_start + current_node.content_length];
+            for primitive in node_primitives {
+                let points = intersect_ray_with_object3d_all_points(ray, &primitive.object3d);
+                if !points.0.is_empty() && points.0[0].offset < *shortest_offset {
+                    *shortest_offset = points.0[0].offset;
+                    *result = Some(BvhIntersection {
+                        intersections: points.0,
+                        rotated_ray: points.1,
+                        primitive,
+                    });
+                }
+            }
+        } else {
+            intersect_with_bvh_nearest_impl(
+                ray,
+                primitives,
+                bvh_nodes,
+                current_node.left_child_index,
+                result,
+                shortest_offset,
+            );
+            intersect_with_bvh_nearest_impl(
+                ray,
+                primitives,
+                bvh_nodes,
+                current_node.right_child_index,
+                result,
+                shortest_offset,
             );
         }
     }
