@@ -1,10 +1,41 @@
-use crate::geometry::{Object3D, Shape3D, Vec3f, EPS, FP_INF, FP_NEG_INF};
+use crate::geometry::{Fp, Object3D, Shape3D, Vec3f, EPS, FP_INF, FP_NEG_INF};
 use crate::scene::Primitive;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AABB {
     pub min: Vec3f,
     pub max: Vec3f,
+}
+
+impl Default for AABB {
+    fn default() -> Self {
+        AABB {
+            min: Vec3f::new(FP_INF, FP_INF, FP_INF),
+            max: Vec3f::new(FP_NEG_INF, FP_NEG_INF, FP_NEG_INF),
+        }
+    }
+}
+impl AABB {
+    pub fn _extend_point(&self, point: Vec3f) -> AABB {
+        AABB {
+            min: self.min.inf(&point),
+            max: self.max.sup(&point),
+        }
+    }
+    pub fn extend_aabb(&self, aabb: &AABB) -> AABB {
+        AABB {
+            min: self.min.inf(&aabb.min),
+            max: self.max.sup(&aabb.max),
+        }
+    }
+
+    pub fn area(&self) -> Fp {
+        let diff = self.max - self.min;
+        let x = diff.x;
+        let y = diff.y;
+        let z = diff.z;
+        x * y + y * z + z * x
+    }
 }
 
 fn calculate_aabb_for_shape(shape3d: &Shape3D) -> AABB {
@@ -58,19 +89,16 @@ pub fn calculate_aabb_for_object(object: &Object3D) -> AABB {
 }
 
 pub fn calculate_aabb(slice: &[Primitive]) -> AABB {
-    let mut min = Vec3f::new(FP_INF, FP_INF, FP_INF);
-    let mut max = Vec3f::new(FP_NEG_INF, FP_NEG_INF, FP_NEG_INF);
+    let mut result = <AABB as Default>::default();
     for a in slice {
         match a.object3d.shape {
             Shape3D::Plane { .. } => {
                 continue;
             }
             _ => {
-                let aabb = calculate_aabb_for_object(&a.object3d);
-                min = min.inf(&aabb.min);
-                max = max.sup(&aabb.max);
+                result = result.extend_aabb(&calculate_aabb_for_object(&a.object3d));
             }
         }
     }
-    AABB { min, max }
+    result
 }
