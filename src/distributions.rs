@@ -1,3 +1,4 @@
+use crate::bvh::{intersect_with_bvh_all_points, BvhTree};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
@@ -14,12 +15,16 @@ pub struct SemisphereUniform;
 
 pub struct CosineWeightedDistribution;
 
-pub struct LightSamplingDistribution {
+pub struct DirectLightSamplingDistribution {
     pub object3d: Object3D,
 }
 
+pub struct MultipleLightSamplingDistribution {
+    pub bvh_tree: BvhTree,
+}
+
 pub struct MixDistribution<R: Rng> {
-    pub distributions: Vec<Box<dyn SampleDistribution<R>>>,
+    pub distributions: Vec<Box<dyn SampleDistribution<R> + Sync>>,
 }
 
 impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
@@ -85,7 +90,7 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
     }
 }
 
-impl<R: Rng> SampleDistribution<R> for LightSamplingDistribution {
+impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
     fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Vec3f {
         let local_coords_point = match self.object3d.shape {
             Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
@@ -160,6 +165,46 @@ impl<R: Rng> SampleDistribution<R> for LightSamplingDistribution {
             })
             .sum();
         pdf
+    }
+}
+
+impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+        let n = self.bvh_tree.primitives.len();
+        let rand_idx = rng.gen_range(0..n);
+        DirectLightSamplingDistribution {
+            object3d: self.bvh_tree.primitives[rand_idx].object3d.clone(),
+        }
+        .sample_unit_vector(point, normal, rng)
+    }
+
+    fn pdf(&self, point: &Vec3f, _normal: &Vec3f, direction: &Vec3f) -> Fp {
+        let ray = Ray {
+            origin: *point,
+            direction: *direction,
+        };
+        let bvh_intersections = intersect_with_bvh_all_points(&ray, &self.bvh_tree);
+        let pdf = bvh_intersections
+            .iter()
+            .map(|bvh_intersection| {
+                let rotated_ray = &bvh_intersection.rotated_ray;
+                let object3d = &bvh_intersection.primitive.object3d;
+                let mut sum = 0.0;
+                for intersection in &bvh_intersection.intersections {
+                    let global_coords_point = ray.origin + intersection.offset * ray.direction;
+                    let local_coords =
+                        rotated_ray.origin + rotated_ray.direction * intersection.offset;
+                    let local_pdf = get_local_pdf(&object3d.shape, local_coords);
+                    let vector_on_sample = global_coords_point - point;
+                    let omega = vector_on_sample.normalize();
+                    sum += local_pdf
+                        * (vector_on_sample.norm_squared()
+                            / (intersection.normal.dot(&omega)).abs())
+                }
+                sum
+            })
+            .sum::<Fp>();
+        pdf / (self.bvh_tree.primitives.len() as Fp)
     }
 }
 

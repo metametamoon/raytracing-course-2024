@@ -36,7 +36,6 @@ fn main() {
         .map(|x| x.trim())
         .collect::<Vec<&str>>();
     let scene = parse_file_content(file_lines);
-    println!("{:#?}", scene);
     let start = Instant::now();
     let rendered_scene = render_scene(&scene);
     dbg!(rendered_scene.len());
@@ -69,10 +68,10 @@ fn dump_rendered_to_png(scene: &Scene, rendered_scene: Vec<u8>, png_path: &str) 
 }
 
 fn dump_rendered_to_ppm(scene: &Scene, rendered_scene: &Vec<u8>, out_file: &mut File) {
-    out_file.write(b"P6\n").unwrap();
+    out_file.write_all(b"P6\n").unwrap();
     out_file
-        .write(format!("{} {}\n", scene.width, scene.height).as_bytes())
+        .write_all(format!("{} {}\n", scene.width, scene.height).as_bytes())
         .unwrap();
-    out_file.write(b"255\n").unwrap();
-    out_file.write(rendered_scene.as_slice()).unwrap();
+    out_file.write_all(b"255\n").unwrap();
+    out_file.write_all(rendered_scene.as_slice()).unwrap();
 }

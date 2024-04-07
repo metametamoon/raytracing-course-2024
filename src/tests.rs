@@ -1,5 +1,5 @@
 use crate::distributions::{
-    CosineWeightedDistribution, LightSamplingDistribution, SampleDistribution,
+    CosineWeightedDistribution, DirectLightSamplingDistribution, SampleDistribution,
 };
 use crate::geometry::{Fp, Object3D, Shape3D, Vec3f};
 use na::{Quaternion, UnitQuaternion};
@@ -52,7 +52,7 @@ fn test_light_box_distribution_norotation() {
         position: Vec3f::new(0.0, 0.0, 4.0),
         rotation: UnitQuaternion::default(),
     };
-    test_distribution(LightSamplingDistribution { object3d })
+    test_distribution(DirectLightSamplingDistribution { object3d })
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn test_light_box_distribution() {
         position: Vec3f::new(0.0, 0.0, 4.0),
         rotation: rnd_rotation,
     };
-    test_distribution(LightSamplingDistribution { object3d })
+    test_distribution(DirectLightSamplingDistribution { object3d })
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn test_light_ellipsoid_distribution_norotation() {
         position: Vec3f::new(0.0, 0.0, 4.0),
         rotation: Default::default(),
     };
-    test_distribution(LightSamplingDistribution { object3d })
+    test_distribution(DirectLightSamplingDistribution { object3d })
 }
 
 #[test]
@@ -101,5 +101,5 @@ fn test_light_ellipsoid_distribution() {
             rng.gen(),
         )),
     };
-    test_distribution(LightSamplingDistribution { object3d })
+    test_distribution(DirectLightSamplingDistribution { object3d })
 }

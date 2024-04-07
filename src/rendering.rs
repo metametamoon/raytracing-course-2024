@@ -1,14 +1,15 @@
-use rand::Rng;
-use rand_pcg::Pcg32;
+use rand::{Rng, RngCore};
+use rand_xoshiro::rand_core::SeedableRng;
+use rand_xoshiro::Xoshiro256StarStar;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 
-use crate::bvh::intersect_with_bvh_all_points;
-use crate::distributions::CosineWeightedDistribution;
-use crate::distributions::LightSamplingDistribution;
+use crate::bvh::{intersect_with_bvh_all_points, validate_bvh};
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
+use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
 use crate::geometry::Material;
 use crate::geometry::Ray;
-use crate::geometry::Shape3D;
 use crate::geometry::Vec3f;
 use crate::geometry::EPS;
 use crate::geometry::FP_PI;
@@ -16,57 +17,44 @@ use crate::geometry::{get_reflection_ray, Fp};
 use crate::geometry::{intersect_ray_with_object3d, Intersection};
 use crate::scene::{Primitive, Scene};
 
-type RandGenType = Pcg32;
-
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
+    validate_bvh(&scene.bvh_primitives_no_planes);
     let sample_distribution = MixDistribution {
         distributions: vec![
             Box::new(CosineWeightedDistribution),
-            Box::new(MixDistribution {
-                distributions: scene
-                    .primitives_no_planes
-                    .iter()
-                    .filter_map(|primitive| {
-                        let result: Box<dyn SampleDistribution<Pcg32>> =
-                            Box::new(LightSamplingDistribution {
-                                object3d: primitive.object3d.clone(),
-                            });
-                        match primitive.object3d.shape {
-                            Shape3D::Ellipsoid { r: _ } => Some(result),
-                            Shape3D::Box { s: _ } => Some(result),
-                            Shape3D::Triangle { a: _, b: _, c: _ } => Some(result),
-                            Shape3D::Plane { norm: _ } => None,
-                        }
-                    })
-                    .collect(),
+            Box::new(MultipleLightSamplingDistribution {
+                bvh_tree: scene.bvh_primitives_no_planes.clone(),
             }),
         ],
     };
 
-    let mut result = Vec::<u8>::new();
-    let mut rng = Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7);
-    for y in 0..scene.height {
-        dbg!(y);
-        for x in 0..scene.width {
-            let color = {
-                let total_color = (0..scene.samples)
-                    .map(|_: i32| {
-                        let ray_to_pixel = get_ray_to_pixel(x, y, scene, &mut rng);
-                        get_ray_color(
-                            &ray_to_pixel,
-                            scene,
-                            scene.ray_depth,
-                            &sample_distribution,
-                            &mut rng,
-                        )
-                    })
-                    .reduce(|x, y| x + y)
-                    .unwrap();
-                total_color / scene.samples as Fp
-            };
-            result.extend(color_to_pixel(color));
-        }
-    }
+    let sample_distr = &sample_distribution;
+
+    let result = (0..scene.height)
+        .collect::<Vec<_>>()
+        // .iter()
+        .par_iter()
+        .flat_map_iter(|y| {
+            dbg!(y);
+            let dist = sample_distr;
+            let mut rng: Xoshiro256StarStar =
+                Xoshiro256StarStar::seed_from_u64((scene.width * y) as u64);
+            (0..scene.width).flat_map(move |x| {
+                let color = {
+                    let total_color = (0..scene.samples)
+                        .map(|_: i32| {
+                            let ray_to_pixel = get_ray_to_pixel(x, *y, scene, &mut rng);
+                            get_ray_color(&ray_to_pixel, scene, scene.ray_depth, dist, &mut rng)
+                        })
+                        .reduce(|x, y| x + y)
+                        .unwrap();
+                    total_color / scene.samples as Fp
+                };
+                let pixel = color_to_pixel(color);
+                pixel
+            })
+        })
+        .collect::<Vec<_>>();
     result
 }
 
@@ -85,7 +73,7 @@ fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
     }
 }
 
-fn get_ray_color(
+fn get_ray_color<RandGenType: RngCore>(
     ray: &Ray,
     scene: &Scene,
     recursion_depth: i32,
@@ -98,12 +86,6 @@ fn get_ray_color(
     match intersect_ray_with_scene(ray, scene) {
         Some((primitive, intersection)) => match primitive.material {
             Material::Diffused => {
-                // if recursion_depth == scene.ray_depth {
-                //     if let Shape3D::Triangle { .. } = primitive.object3d.shape {
-                //         let _u = 0;
-                //         println!("Triangle!");
-                //     }
-                // }
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
                 let rnd_vec =
@@ -209,7 +191,7 @@ fn get_ray_color(
     }
 }
 
-fn get_reflection_color(
+fn get_reflection_color<RandGenType: RngCore>(
     ray: &Ray,
     scene: &Scene,
     recursion_depth: i32,
@@ -238,16 +220,14 @@ fn intersect_ray_with_scene<'a>(
 ) -> Option<(&'a Primitive, Intersection)> {
     let mut min_dist = Fp::INFINITY;
     let mut result = None;
-    let good = intersect_with_bvh_all_points(
-        ray,
-        &scene.primitives_no_planes,
-        &scene.bvh_nodes,
-        &scene.bvh_nodes.len() - 1,
-    );
-    for (intersection, _ray, primitive) in good {
-        if !intersection.is_empty() {
-            min_dist = intersection[0].offset;
-            result = Some((primitive, intersection[0].clone()))
+    let good = intersect_with_bvh_all_points(ray, &scene.bvh_primitives_no_planes);
+    for bvh_intersection in good {
+        if !bvh_intersection.intersections.is_empty() {
+            min_dist = bvh_intersection.intersections[0].offset;
+            result = Some((
+                bvh_intersection.primitive,
+                bvh_intersection.intersections[0].clone(),
+            ))
         }
     }
     for plane_primitive in &scene.infinite_primitives {
