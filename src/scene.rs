@@ -66,7 +66,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         bvh_light_sources: Default::default(),
     };
     let mut finite_primitives = vec![];
-    let mut light_emmiting_finite_primitives = vec![];
+    let mut light_emitting_finite_primitives = vec![];
 
     let mut current_primitive: Option<Primitive> = None;
 
@@ -129,7 +129,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                         _ => {
                             finite_primitives.push(primitive_to_push.clone());
                             if current_primitive.emission.norm() > EPS {
-                                light_emmiting_finite_primitives.push(primitive_to_push)
+                                light_emitting_finite_primitives.push(primitive_to_push)
                             }
                         }
                     }
@@ -290,7 +290,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
             _ => {
                 finite_primitives.push(primitive_to_push.clone());
                 if current_primitive.emission.norm() > EPS {
-                    light_emmiting_finite_primitives.push(primitive_to_push)
+                    light_emitting_finite_primitives.push(primitive_to_push)
                 }
             }
         }
@@ -301,6 +301,6 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
     result.camera_fov_y =
         ((result.camera_fov_x / 2.).tan() * result.height as Fp / result.width as Fp).atan() * 2.0;
     result.bvh_finite_primitives = create_bvh_tree(finite_primitives);
-    result.bvh_light_sources = create_bvh_tree(light_emmiting_finite_primitives);
+    result.bvh_light_sources = create_bvh_tree(light_emitting_finite_primitives);
     result
 }

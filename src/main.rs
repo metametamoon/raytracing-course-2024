@@ -34,6 +34,11 @@ fn main() {
         .map(|x| x.trim())
         .collect::<Vec<&str>>();
     let scene = parse_file_content(file_lines);
+    println!(
+        "Scene finitite primitives: {}, light sources: {}",
+        scene.bvh_finite_primitives.primitives.len(),
+        scene.bvh_light_sources.primitives.len()
+    );
     let start = Instant::now();
     let rendered_scene = render_scene(&scene);
     dbg!(rendered_scene.len());
