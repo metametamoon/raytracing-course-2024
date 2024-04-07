@@ -19,14 +19,15 @@ use crate::scene::{Primitive, Scene};
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     validate_bvh(&scene.bvh_finite_primitives);
-    let sample_distribution = MixDistribution {
-        distributions: vec![
-            Box::new(CosineWeightedDistribution),
-            Box::new(MultipleLightSamplingDistribution {
-                bvh_tree: scene.bvh_light_sources.clone(),
-            }),
-        ],
-    };
+    let mut distributions: Vec<Box<dyn SampleDistribution<_> + Sync>> =
+        vec![Box::new(CosineWeightedDistribution)];
+    if !scene.bvh_light_sources.primitives.is_empty() {
+        distributions.push(Box::new(MultipleLightSamplingDistribution {
+            bvh_tree: scene.bvh_light_sources.clone(),
+        }))
+    }
+
+    let sample_distribution = MixDistribution { distributions };
 
     let sample_distr = &sample_distribution;
 
