@@ -254,7 +254,9 @@ fn intersect_with_bvh_nearest_impl<'a>(
 ) {
     let current_node = &bvh_nodes[bvh_node_index];
     if let Some(nearest_aabb_intersection) = get_aabb_intersection(ray, &current_node.aabb) {
-        if nearest_aabb_intersection.offset > *shortest_offset {
+        if *shortest_offset < nearest_aabb_intersection.offset
+            && nearest_aabb_intersection.is_outer_to_inner
+        {
             return;
         }
         if current_node.left_child_index == usize::MAX {
