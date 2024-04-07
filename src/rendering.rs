@@ -18,12 +18,12 @@ use crate::geometry::{intersect_ray_with_object3d, Intersection};
 use crate::scene::{Primitive, Scene};
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
-    validate_bvh(&scene.bvh_primitives_no_planes);
+    validate_bvh(&scene.bvh_finite_primitives);
     let sample_distribution = MixDistribution {
         distributions: vec![
             Box::new(CosineWeightedDistribution),
             Box::new(MultipleLightSamplingDistribution {
-                bvh_tree: scene.bvh_primitives_no_planes.clone(),
+                bvh_tree: scene.bvh_light_sources.clone(),
             }),
         ],
     };
@@ -34,6 +34,7 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
         .collect::<Vec<_>>()
         .par_iter()
         .flat_map_iter(|y| {
+            dbg!(y);
             let dist = sample_distr;
             let mut rng: Xoshiro256StarStar =
                 Xoshiro256StarStar::seed_from_u64((scene.width * y) as u64);
@@ -217,8 +218,7 @@ fn intersect_ray_with_scene<'a>(
 ) -> Option<(&'a Primitive, Intersection)> {
     let mut latest_intersection_offset = Fp::INFINITY;
     let mut result = None;
-    let maybe_intersection =
-        interesect_with_bvh_nearest_point(ray, &scene.bvh_primitives_no_planes);
+    let maybe_intersection = interesect_with_bvh_nearest_point(ray, &scene.bvh_finite_primitives);
     if let Some(bvh_intersection) = maybe_intersection {
         latest_intersection_offset = bvh_intersection.intersections[0].offset;
         result = Some((

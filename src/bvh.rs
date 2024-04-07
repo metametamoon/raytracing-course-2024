@@ -201,11 +201,13 @@ fn intersect_with_bvh_all_points_impl<'a>(
                 ..current_node.content_start + current_node.content_length];
             for primitive in node_primitives {
                 let points = intersect_ray_with_object3d_all_points(ray, &primitive.object3d);
-                result.push(BvhIntersection {
-                    intersections: points.0,
-                    rotated_ray: points.1,
-                    primitive,
-                });
+                if !points.0.is_empty() {
+                    result.push(BvhIntersection {
+                        intersections: points.0,
+                        rotated_ray: points.1,
+                        primitive,
+                    });
+                }
             }
         } else {
             intersect_with_bvh_all_points_impl(

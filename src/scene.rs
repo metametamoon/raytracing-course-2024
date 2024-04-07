@@ -2,7 +2,7 @@ use na::{Quaternion, UnitQuaternion, Vector3};
 
 use crate::aabb::{calculate_aabb_for_object, Aabb};
 use crate::bvh::{create_bvh_tree, BvhTree};
-use crate::geometry::{Fp, Material, Object3D, Shape3D, Vec3f};
+use crate::geometry::{Fp, Material, Object3D, Shape3D, Vec3f, EPS};
 
 #[derive(Clone, Debug)]
 pub enum LightLocation {
@@ -37,12 +37,13 @@ pub struct Scene {
     pub camera_up: Vec3f,
     pub camera_fov_x: Fp,
     pub camera_fov_y: Fp,
-    pub bvh_primitives_no_planes: BvhTree,
+    pub bvh_finite_primitives: BvhTree,
     pub lights: Vec<LightSource>,
     pub ray_depth: i32,
     pub ambient_light: Vec3f,
     pub samples: i32,
     pub infinite_primitives: Vec<Primitive>,
+    pub bvh_light_sources: BvhTree,
 }
 
 pub fn parse_file_content(content: Vec<&str>) -> Scene {
@@ -56,14 +57,16 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         camera_up: Default::default(),
         camera_fov_x: 0.0,
         camera_fov_y: 0.0,
-        bvh_primitives_no_planes: Default::default(),
+        bvh_finite_primitives: Default::default(),
         lights: vec![],
         ray_depth: 0,
         ambient_light: Default::default(),
         samples: 1,
         infinite_primitives: vec![],
+        bvh_light_sources: Default::default(),
     };
-    let mut primitives_no_planes = vec![];
+    let mut finite_primitives = vec![];
+    let mut light_emmiting_finite_primitives = vec![];
 
     let mut current_primitive: Option<Primitive> = None;
 
@@ -123,7 +126,12 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
                     };
                     match current_primitive.object3d.shape {
                         Shape3D::Plane { .. } => result.infinite_primitives.push(primitive_to_push),
-                        _ => primitives_no_planes.push(primitive_to_push),
+                        _ => {
+                            finite_primitives.push(primitive_to_push.clone());
+                            if current_primitive.emission.norm() > EPS {
+                                light_emmiting_finite_primitives.push(primitive_to_push)
+                            }
+                        }
                     }
                 }
                 current_primitive = Some(Primitive {
@@ -279,7 +287,12 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
         };
         match current_primitive.object3d.shape {
             Shape3D::Plane { .. } => result.infinite_primitives.push(primitive_to_push),
-            _ => primitives_no_planes.push(primitive_to_push),
+            _ => {
+                finite_primitives.push(primitive_to_push.clone());
+                if current_primitive.emission.norm() > EPS {
+                    light_emmiting_finite_primitives.push(primitive_to_push)
+                }
+            }
         }
     }
     if !first_light_sourse {
@@ -287,6 +300,7 @@ pub fn parse_file_content(content: Vec<&str>) -> Scene {
     }
     result.camera_fov_y =
         ((result.camera_fov_x / 2.).tan() * result.height as Fp / result.width as Fp).atan() * 2.0;
-    result.bvh_primitives_no_planes = create_bvh_tree(primitives_no_planes);
+    result.bvh_finite_primitives = create_bvh_tree(finite_primitives);
+    result.bvh_light_sources = create_bvh_tree(light_emmiting_finite_primitives);
     result
 }
