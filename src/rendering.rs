@@ -88,8 +88,9 @@ fn get_ray_color<RandGenType: RngCore>(
             Material::Diffused => {
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
-                let rnd_vec =
-                    distribution.sample_unit_vector(&corrected_point, &intersection.normal, rng);
+                let rnd_vec = distribution
+                    .sample_unit_vector(&corrected_point, &intersection.normal, rng)
+                    .into_inner();
                 let pdf = distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
                 if pdf > 0.0 && rnd_vec.dot(&intersection.normal) > 0.0 {
                     let color_refl = get_ray_color(

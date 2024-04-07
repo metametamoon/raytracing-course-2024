@@ -1,4 +1,5 @@
 use crate::bvh::{intersect_with_bvh_all_points, BvhTree};
+use na::Unit;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
@@ -7,7 +8,7 @@ use crate::geometry::{
 };
 
 pub trait SampleDistribution<R: Rng> {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f;
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f>;
     fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp;
 }
 
@@ -28,7 +29,7 @@ pub struct MixDistribution<R: Rng> {
 }
 
 impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
-    fn sample_unit_vector(&self, _: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, _: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let result = Vec3f::new(
             normal_distr.sample(rng),
@@ -37,9 +38,9 @@ impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
         )
         .normalize();
         if result.dot(normal) > 0.0 {
-            result
+            Unit::<Vec3f>::new_normalize(result)
         } else {
-            -result
+            Unit::<Vec3f>::new_normalize(-result)
         }
     }
 
@@ -49,7 +50,7 @@ impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
 }
 
 impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
-    fn sample_unit_vector(&self, _point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, _point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let uniform = Vec3f::new(
             normal_distr.sample(rng),
@@ -57,8 +58,7 @@ impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
             normal_distr.sample(rng),
         )
         .normalize();
-        let result = (uniform + normal).normalize();
-        result
+        Unit::<Vec3f>::new_normalize(uniform + normal)
     }
 
     fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp {
@@ -91,7 +91,7 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
 }
 
 impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
-    fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let local_coords_point = match self.object3d.shape {
             Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
             Shape3D::Ellipsoid { r } => {
@@ -142,7 +142,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
         let global_coords_point =
             self.object3d.rotation.transform_vector(&local_coords_point) + self.object3d.position;
 
-        (global_coords_point - point).normalize()
+        Unit::<Vec3f>::new_normalize(global_coords_point - point)
     }
 
     fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> Fp {
@@ -169,7 +169,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
 }
 
 impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let n = self.bvh_tree.primitives.len();
         let rand_idx = rng.gen_range(0..n);
         DirectLightSamplingDistribution {
@@ -209,7 +209,7 @@ impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
 }
 
 impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Vec3f {
+    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let n = self.distributions.len();
         let rand_idx = rng.gen_range(0..n);
         self.distributions[rand_idx].sample_unit_vector(point, normal, rng)
