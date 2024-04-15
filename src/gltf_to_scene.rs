@@ -107,7 +107,7 @@ fn read_primitives<'a>(
         camera.camera_position = pp4_to_r3(camera_position);
         camera.camera_up = pp4_vector_slice(camera_right);
         camera.camera_right = pp4_vector_slice(camera_forward);
-        camera.camera_forward = pp4_vector_slice(camera_up); //right
+        camera.camera_forward = pp4_vector_slice(camera_up);
     }
 
     if let Some(mesh) = node.mesh() {

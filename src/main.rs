@@ -55,6 +55,9 @@ fn main() {
     dbg!(rendered_scene.len());
     let duration = start.elapsed();
     println!("Rendering took {:?}", duration);
+    println!("Dumping to {}", output_ppm);
+    let out_ppm_path: &Path = output_ppm.as_ref();
+    println!("Canonic path: {:?}", out_ppm_path.canonicalize());
     let mut out_file = fs::OpenOptions::new()
         .append(true)
         .create(true)
