@@ -50,7 +50,7 @@ fn create_bvh_node(
     start: usize,
     length: usize,
 ) -> usize {
-    println!("Called bvh! len={}", length);
+    // println!("Called bvh! len={}", length);
     let aabb = calculate_aabb(&primitives[start..start + length]);
     match try_split(&aabb, &mut primitives[start..start + length]) {
         Some(first_part_len) => {

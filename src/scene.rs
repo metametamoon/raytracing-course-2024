@@ -46,7 +46,7 @@ pub struct Scene {
     pub bvh_light_sources: BvhTree,
 }
 
-pub fn parse_file_content(content: Vec<&str>) -> Scene {
+pub fn _parse_file_content(content: Vec<&str>) -> Scene {
     let mut result = Scene {
         width: 0,
         height: 0,

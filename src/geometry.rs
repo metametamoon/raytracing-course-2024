@@ -1,5 +1,5 @@
 use arrayvec::ArrayVec;
-use na::Matrix3;
+use na::{Matrix3, Vector4};
 use nalgebra::{UnitQuaternion, Vector3};
 
 pub type Fp = f64;
@@ -7,6 +7,7 @@ pub const FP_PI: Fp = std::f64::consts::PI;
 pub const FP_INF: Fp = f64::INFINITY;
 pub const FP_NEG_INF: Fp = f64::NEG_INFINITY;
 pub type Vec3f = Vector3<Fp>;
+pub type Vec4f = Vector4<Fp>;
 
 #[derive(Clone, Debug)]
 pub struct Ray {

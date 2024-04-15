@@ -2,20 +2,26 @@ mod aabb;
 mod bvh;
 mod distributions;
 mod geometry;
+mod gltf_to_scene;
 mod rendering;
 mod scene;
 #[cfg(test)]
 mod tests;
+
 extern crate nalgebra as na;
 
+use crate::gltf_to_scene::convert_gltf_to_scene;
 use crate::rendering::render_scene;
-use crate::scene::{parse_file_content, Scene};
+use crate::scene::{Primitive, Scene};
 use env_logger::Builder;
+use gltf::buffer::Data;
+use gltf::{Document, Error};
 use image::{ImageFormat, RgbImage};
 use log::LevelFilter;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 
 fn main() {
@@ -28,14 +34,19 @@ fn main() {
 
     log::debug!("On creation.");
     let args: Vec<String> = std::env::args().collect();
-    let file_string = fs::read_to_string(&args[1]).expect("Failed opening file");
-    let file_lines = file_string
-        .split('\n')
-        .map(|x| x.trim())
-        .collect::<Vec<&str>>();
-    let scene = parse_file_content(file_lines);
+    let input_scene = &args[1];
+    let width = args[2].parse::<i32>().unwrap();
+    let height = args[3].parse::<i32>().unwrap();
+    let samples = args[4].parse::<i32>().unwrap();
+    let output_ppm = &args[5];
+    let maybe_output_png = args.get(6);
+
+    let (gltf, buffers, _) = gltf::import(input_scene).unwrap();
+
+    let scene = convert_gltf_to_scene(&gltf, &buffers, width, height, samples);
+    // let scene = parse_file_content(file_lines);
     println!(
-        "Scene finitite primitives: {}, light sources: {}",
+        "Scene finite primitives: {}, light sources: {}",
         scene.bvh_finite_primitives.primitives.len(),
         scene.bvh_light_sources.primitives.len()
     );
@@ -47,11 +58,11 @@ fn main() {
     let mut out_file = fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(&args[2])
+        .open(output_ppm)
         .unwrap();
     dump_rendered_to_ppm(&scene, &rendered_scene, &mut out_file);
-    if args.len() >= 4 {
-        let png_path = format!("{}.png", args[3]);
+    if let Some(output_png) = maybe_output_png {
+        let png_path = format!("{}.png", output_png);
         dump_rendered_to_png(&scene, rendered_scene, &png_path);
         println!("Image dumped to {}", png_path);
     }
