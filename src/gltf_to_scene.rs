@@ -1,12 +1,13 @@
+use gltf::buffer::Data;
+use gltf::camera::Projection::Perspective;
+use gltf::Document;
+use gltf::mesh::util::ReadIndices;
+use na::{Matrix4, Matrix4x1, Vector4};
+
 use crate::aabb::calculate_aabb_for_object;
+use crate::bvh::create_bvh_tree;
 use crate::geometry::{EPS, Fp, Material, Object3D, Shape3D, Vec3f, Vec4f};
 use crate::scene::{Primitive, Scene};
-use gltf::buffer::Data;
-use gltf::mesh::util::ReadIndices;
-use gltf::{Document, Gltf};
-use gltf::camera::Projection::Perspective;
-use na::{Matrix4, Matrix4x1, Vector4};
-use crate::bvh::create_bvh_tree;
 
 #[derive(Debug)]
 struct Camera {
@@ -35,7 +36,12 @@ pub fn convert_gltf_to_scene(
     };
     let mut finite_primitives = Vec::<Primitive>::new();
     let mut light_primitives = Vec::<Primitive>::new();
-    for gltf_scene in gltf.scenes() {
+    let scenes = gltf.scenes().collect::<Vec<_>>();
+    dbg!(scenes.len());
+    for  node in gltf.nodes() {
+        read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation)
+    }
+    for gltf_scene in scenes {
         for node in gltf_scene.nodes() {
             read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation);
         }

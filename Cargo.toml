@@ -19,7 +19,7 @@ rand_xoshiro = "0.6.0"
 
 [dependencies.gltf]
 version = "1.2"
-features = ["extras", "names", "utils", "KHR_materials_emissive_strength"]
+features = ["extras", "names", "utils", "KHR_materials_emissive_strength", "import"]
 
 [profile.dev]
 debug = true
