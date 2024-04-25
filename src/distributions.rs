@@ -1,10 +1,10 @@
-use crate::bvh::{intersect_with_bvh_all_points, BvhTree};
 use na::Unit;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
+use crate::bvh::{BvhTree, intersect_with_bvh_all_points};
 use crate::geometry::{
-    intersect_ray_with_object3d_all_points, Fp, Object3D, Ray, Shape3D, Vec3f, EPS, FP_PI,
+    Fp, FP_PI, intersect_ray_with_object3d_all_points, Object3D, Ray, Shape3D, Vec3f,
 };
 
 pub trait SampleDistribution<R: Rng> {
@@ -66,19 +66,8 @@ impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
     }
 }
 
-fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
+fn get_local_pdf(shape: &Shape3D) -> Fp {
     match shape {
-        Shape3D::Plane { .. } => 0.0,
-        Shape3D::Ellipsoid { r } => {
-            let n = local_coords.component_div(r);
-            if (n.norm() - 1.0).abs() > EPS {
-                log::debug!("Weird norm for unit sphere: {} of vector {:?}", n.norm(), n);
-            }
-            let root =
-                ((n.x * r.y * r.z).powi(2) + (r.x * n.y * r.z).powi(2) + (r.x * r.y * n.z).powi(2))
-                    .sqrt();
-            1.0 / (4.0 * FP_PI * root)
-        }
         Shape3D::Box { s } => {
             let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
             1.0 / area
@@ -93,17 +82,6 @@ fn get_local_pdf(shape: &Shape3D, local_coords: Vec3f) -> Fp {
 impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
     fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
         let local_coords_point = match self.object3d.shape {
-            Shape3D::Plane { norm: _ } => panic!("Plane not supported!"),
-            Shape3D::Ellipsoid { r } => {
-                let normal_distr = Normal::new(0.0, 1.0).unwrap();
-                let result = Vec3f::new(
-                    normal_distr.sample(rng),
-                    normal_distr.sample(rng),
-                    normal_distr.sample(rng),
-                )
-                .normalize();
-                result.component_mul(&r)
-            }
             Shape3D::Box { s } => {
                 let (wx, wy, wz) = (4.0 * s.y * s.z, 4.0 * s.x * s.z, 4.0 * s.x * s.y);
                 let w = wx + wy + wz;
@@ -150,14 +128,13 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
             origin: *point,
             direction: *direction,
         };
-        let (all_intersections, rotated_ray) =
+        let (all_intersections, _rotated_ray) =
             intersect_ray_with_object3d_all_points(&ray, &self.object3d);
         let pdf = all_intersections
             .iter()
             .map(|intersection| {
                 let global_coords_point = ray.origin + intersection.offset * ray.direction;
-                let local_coords = rotated_ray.origin + rotated_ray.direction * intersection.offset;
-                let local_pdf = get_local_pdf(&self.object3d.shape, local_coords);
+                let local_pdf = get_local_pdf(&self.object3d.shape);
                 let vector_on_sample = global_coords_point - point;
                 let omega = vector_on_sample.normalize();
                 local_pdf
@@ -187,14 +164,11 @@ impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
         let pdf = bvh_intersections
             .iter()
             .map(|bvh_intersection| {
-                let rotated_ray = &bvh_intersection.rotated_ray;
                 let object3d = &bvh_intersection.primitive.object3d;
                 let mut sum = 0.0;
                 for intersection in &bvh_intersection.intersections {
                     let global_coords_point = ray.origin + intersection.offset * ray.direction;
-                    let local_coords =
-                        rotated_ray.origin + rotated_ray.direction * intersection.offset;
-                    let local_pdf = get_local_pdf(&object3d.shape, local_coords);
+                    let local_pdf = get_local_pdf(&object3d.shape);
                     let vector_on_sample = global_coords_point - point;
                     let omega = vector_on_sample.normalize();
                     sum += local_pdf

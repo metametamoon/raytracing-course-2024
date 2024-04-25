@@ -24,11 +24,10 @@ pub struct Intersection {
 
 #[derive(Clone, Debug)]
 pub enum Shape3D {
-    Plane { norm: Vec3f },
-    Ellipsoid { r: Vec3f },
     Box { s: Vec3f },
     Triangle { a: Vec3f, b: Vec3f, c: Vec3f },
 }
+
 
 #[derive(Clone, Debug)]
 pub struct Object3D {
@@ -70,8 +69,6 @@ fn sort2(x: Fp, y: Fp) -> (Fp, Fp) {
 
 fn intersect_all_points(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> ArrayVec<Intersection, 2> {
     match shape {
-        Shape3D::Plane { norm } => intersect_with_plane(ray, upper_bound, norm),
-        Shape3D::Ellipsoid { r } => intersect_with_ellipsoid(ray, upper_bound, r),
         Shape3D::Box { s } => intersect_with_box(ray, upper_bound, s),
         Shape3D::Triangle {
             a: p1,
@@ -168,65 +165,6 @@ fn intersect_with_box(ray: &Ray, upper_bound: Fp, s: &Vec3f) -> ArrayVec<Interse
         result
     } else {
         ArrayVec::<Intersection, 2>::new()
-    }
-}
-
-fn intersect_with_ellipsoid(ray: &Ray, upper_bound: Fp, r: &Vec3f) -> ArrayVec<Intersection, 2> {
-    let d1 = ray.direction.component_div(r);
-    let o1 = ray.origin.component_div(r);
-    let a = d1.dot(&d1);
-    let b = 2.0 * o1.dot(&d1);
-    let c = o1.dot(&o1) - 1.0;
-    let discr = b * b - 4.0 * a * c;
-    if discr < 0.0 {
-        ArrayVec::new()
-    } else {
-        let x1 = (-b - discr.sqrt()) / (2.0 * a);
-        let x2 = (-b + discr.sqrt()) / (2.0 * a);
-        let (t1, t2) = sort2(x1, x2);
-        let mut result = ArrayVec::<Intersection, 2>::new();
-        if t1 > 0.0 && t1 < upper_bound {
-            let p1 = ray.origin + ray.direction * t1;
-            let norm1 = p1.component_div(r).component_div(r).normalize();
-            result.push(Intersection {
-                offset: t1,
-                normal: norm1,
-                is_outer_to_inner: true,
-            });
-        }
-        if t2 > 0.0 && t2 < upper_bound {
-            let p2 = ray.origin + ray.direction * t2;
-
-            let norm2 = p2.component_div(r).component_div(r).normalize();
-            result.push(Intersection {
-                offset: t2,
-                normal: -norm2,
-                is_outer_to_inner: false,
-            });
-        }
-        result
-    }
-}
-
-fn intersect_with_plane(ray: &Ray, upper_bound: Fp, norm: &Vec3f) -> ArrayVec<Intersection, 2> {
-    let x = norm.dot(&ray.direction);
-    if x == 0.0 {
-        ArrayVec::new()
-    } else {
-        let offset = -ray.origin.dot(norm) / x;
-        let mut result = ArrayVec::<Intersection, 2>::new();
-        if 0.0 < offset && offset < upper_bound {
-            result.push(Intersection {
-                offset,
-                normal: if x < 0.0 {
-                    norm.normalize()
-                } else {
-                    -norm.normalize()
-                },
-                is_outer_to_inner: true,
-            })
-        }
-        result
     }
 }
 

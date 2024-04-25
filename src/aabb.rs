@@ -53,13 +53,6 @@ impl Aabb {
 fn calculate_aabb_for_shape(shape3d: &Shape3D) -> Aabb {
     let eps_vec = Vec3f::new(EPS, EPS, EPS);
     match shape3d {
-        Shape3D::Plane { norm: _norm } => {
-            panic!("AABB on plane")
-        }
-        Shape3D::Ellipsoid { r } => Aabb {
-            min: -r - eps_vec,
-            max: r + eps_vec,
-        },
         Shape3D::Box { s } => Aabb {
             min: -s - eps_vec,
             max: s + eps_vec,
@@ -104,9 +97,6 @@ pub fn calculate_aabb(slice: &[Primitive]) -> Aabb {
     let mut result = <Aabb as Default>::default();
     for a in slice {
         match a.object3d.shape {
-            Shape3D::Plane { .. } => {
-                continue;
-            }
             _ => {
                 result = result.extend_aabb(&calculate_aabb_for_object(&a.object3d));
             }

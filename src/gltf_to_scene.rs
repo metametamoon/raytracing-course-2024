@@ -2,7 +2,7 @@ use gltf::buffer::Data;
 use gltf::camera::Projection::Perspective;
 use gltf::Document;
 use gltf::mesh::util::ReadIndices;
-use na::{Matrix4, Matrix4x1, Vector4};
+use na::{Matrix4, Matrix4x1};
 
 use crate::aabb::calculate_aabb_for_object;
 use crate::bvh::create_bvh_tree;
@@ -59,7 +59,6 @@ pub fn convert_gltf_to_scene(
         camera_fov_x: camera.camera_fov_x,
         camera_fov_y: camera.camera_fov_y,
         bvh_finite_primitives: create_bvh_tree(finite_primitives),
-        lights: vec![],
         ray_depth: 6,
         ambient_light: Default::default(),
         samples,
@@ -68,9 +67,6 @@ pub fn convert_gltf_to_scene(
     }
 }
 
-fn one_extend(v: Vec3f) -> Vec4f {
-    Vector4::<Fp>::new(v.x, v.y, v.z, 1.0 as Fp)
-}
 
 fn pp4_to_r3(v: Vec4f) -> Vec3f {
     Vec3f::new(v.x / v.w, v.y / v.w, v.z / v.w)

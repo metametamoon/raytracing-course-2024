@@ -12,10 +12,10 @@ extern crate nalgebra as na;
 
 use crate::gltf_to_scene::convert_gltf_to_scene;
 use crate::rendering::render_scene;
-use crate::scene::{Primitive, Scene};
+use crate::scene::{Scene};
 use env_logger::Builder;
-use gltf::buffer::Data;
-use gltf::{Document, Error};
+
+
 use image::{ImageFormat, RgbImage};
 use log::LevelFilter;
 use std::fs;
