@@ -41,11 +41,11 @@ pub fn convert_gltf_to_scene(
     for  node in gltf.nodes() {
         read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation)
     }
-    for gltf_scene in scenes {
-        for node in gltf_scene.nodes() {
-            read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation);
-        }
-    }
+    // for gltf_scene in scenes {
+    //     for node in gltf_scene.nodes() {
+    //         read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation);
+    //     }
+    // }
     eprintln!("here!");
     dbg!(&camera);
     Scene {
@@ -126,7 +126,11 @@ fn read_primitives<'a>(
         .collect::<Vec<_>>();
 
         // println!("Node #{} has some {} indices!", node.index(), indices);
-        let Some(positions) = reader.read_positions().map(|x| x.collect::<Vec<_>>()) else { todo!() };
+        let positions = reader
+            .read_positions()
+            .map(|x| x.collect::<Vec<_>>())
+            .expect("Missing positions!");
+        let maybe_normals = reader.read_normals().map(|x| x.collect::<Vec<_>>());
         for triangle in indices.chunks_exact(3) {
             assert_eq!(triangle.len(), 3);
             let to_vec3f_with_transform = |l: &[f32; 3]| {
@@ -138,11 +142,28 @@ fn read_primitives<'a>(
                     point[2] / point[3],
                 )
             };
+            let a = to_vec3f_with_transform(&positions[triangle[0] as usize]);
+            let b = to_vec3f_with_transform(&positions[triangle[1] as usize]);
+            let c = to_vec3f_with_transform(&positions[triangle[2] as usize]);
+            let default_normal = (b - a).cross(&(c - a)).normalize();
+            let (a_norm, b_norm, c_norm) = match maybe_normals {
+                Some(ref normals) => {
+                    (
+                        to_vec3f_with_transform(&normals[triangle[0] as usize]),
+                        to_vec3f_with_transform(&normals[triangle[0] as usize]),
+                        to_vec3f_with_transform(&normals[triangle[0] as usize])
+                        )
+                }
+                None => { (default_normal, default_normal, default_normal)}
+            };
             let object3d = Object3D {
                 shape: Shape3D::Triangle {
-                    a: to_vec3f_with_transform(&positions[triangle[0] as usize]),
-                    b: to_vec3f_with_transform(&positions[triangle[1] as usize]),
-                    c: to_vec3f_with_transform(&positions[triangle[2] as usize]),
+                    a: a,
+                    b: b,
+                    c: c,
+                    a_norm,
+                    b_norm,
+                    c_norm
                 }
                 .clone(),
                 position: Vec3f::new(0.0, 0.0, 0.0),

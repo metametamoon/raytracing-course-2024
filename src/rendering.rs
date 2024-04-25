@@ -87,10 +87,10 @@ fn get_ray_color<RandGenType: RngCore>(
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
                 let rnd_vec = distribution
-                    .sample_unit_vector(&corrected_point, &intersection.normal, rng)
+                    .sample_unit_vector(&corrected_point, &intersection.normal_geometry, rng)
                     .into_inner();
-                let pdf = distribution.pdf(&corrected_point, &intersection.normal, &rnd_vec);
-                if pdf > 0.0 && rnd_vec.dot(&intersection.normal) > 0.0 {
+                let pdf = distribution.pdf(&corrected_point, &intersection.normal_geometry, &rnd_vec);
+                if pdf > 0.0 && rnd_vec.dot(&intersection.normal_geometry) > 0.0 {
                     let color_refl = get_ray_color(
                         &Ray {
                             origin: corrected_point,
@@ -103,13 +103,13 @@ fn get_ray_color<RandGenType: RngCore>(
                     );
                     total_color += color_refl.component_mul(&primitive.color)
                         * (1.0 / FP_PI)
-                        * rnd_vec.dot(&intersection.normal)
+                        * rnd_vec.dot(&intersection.normal_geometry)
                         * (1.0 / pdf);
                 }
                 total_color
             }
             Material::Metallic => {
-                let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
+                let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal_geometry);
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let reflection_ray = Ray {
                     origin: corrected_point,
@@ -125,7 +125,7 @@ fn get_ray_color<RandGenType: RngCore>(
                 .component_mul(&primitive.color)
             }
             Material::Dielectric => {
-                let cosine = -ray.direction.normalize().dot(&intersection.normal);
+                let cosine = -ray.direction.normalize().dot(&intersection.normal_geometry);
                 let cosine = Fp::min(cosine, 1.0);
                 let (eta1, eta2) = if intersection.is_outer_to_inner {
                     (1.0, primitive.ior)
@@ -165,7 +165,7 @@ fn get_ray_color<RandGenType: RngCore>(
                         let refracted_color = {
                             let cosine2 = (1.0 - sine2 * sine2).sqrt();
                             let new_dir = (eta1 / eta2) * ray.direction.normalize()
-                                + (eta1 / eta2 * cosine - cosine2) * intersection.normal;
+                                + (eta1 / eta2 * cosine - cosine2) * intersection.normal_geometry;
                             get_ray_color(
                                 &Ray {
                                     origin: corrected_point_forward,
@@ -199,7 +199,7 @@ fn get_reflection_color<RandGenType: RngCore>(
     distribution: &dyn SampleDistribution<RandGenType>,
     rng: &mut RandGenType,
 ) -> Vec3f {
-    let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal);
+    let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal_geometry);
     let reflection_ray = Ray {
         origin: corrected_point,
         direction: reflected_direction,

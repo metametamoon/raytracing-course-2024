@@ -72,7 +72,7 @@ fn get_local_pdf(shape: &Shape3D) -> Fp {
             let area = (s.x * s.y + s.y * s.z + s.z * s.x) * 8.0;
             1.0 / area
         }
-        Shape3D::Triangle { a, b, c } => {
+        Shape3D::Triangle { a, b, c, .. } => {
             let area = (b - a).cross(&(c - a)).norm() * 0.5;
             1.0 / area
         }
@@ -107,7 +107,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
                     )
                 }
             }
-            Shape3D::Triangle { a, b, c } => {
+            Shape3D::Triangle { a, b, c, .. } => {
                 let (u, v) = (rng.gen_range(0.0..1.0), rng.gen_range(0.0..1.0));
                 let (u, v) = if u + v < 1.0 {
                     (u, v)
@@ -138,7 +138,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
                 let vector_on_sample = global_coords_point - point;
                 let omega = vector_on_sample.normalize();
                 local_pdf
-                    * (vector_on_sample.norm_squared() / (intersection.normal.dot(&omega)).abs())
+                    * (vector_on_sample.norm_squared() / (intersection.normal_geometry.dot(&omega)).abs())
             })
             .sum();
         pdf
@@ -173,7 +173,7 @@ impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
                     let omega = vector_on_sample.normalize();
                     sum += local_pdf
                         * (vector_on_sample.norm_squared()
-                            / (intersection.normal.dot(&omega)).abs())
+                            / (intersection.normal_geometry.dot(&omega)).abs())
                 }
                 sum
             })

@@ -57,7 +57,7 @@ fn calculate_aabb_for_shape(shape3d: &Shape3D) -> Aabb {
             min: -s - eps_vec,
             max: s + eps_vec,
         },
-        Shape3D::Triangle { a, b, c } => Aabb {
+        Shape3D::Triangle { a, b, c, .. } => Aabb {
             min: a.inf(b).inf(c) - eps_vec,
             max: a.sup(b).sup(c) + eps_vec,
         },
