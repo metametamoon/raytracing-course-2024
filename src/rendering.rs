@@ -86,11 +86,11 @@ fn get_ray_color<RandGenType: RngCore>(
             Material::Diffused => {
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
-                // dbg!(&intersection.normal_shading);
                 let rnd_vec = distribution
                     .sample_unit_vector(&corrected_point, &intersection.normal_shading, rng)
                     .into_inner();
-                let pdf = distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
+                let pdf =
+                    distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
                 if pdf > 0.0 && rnd_vec.dot(&intersection.normal_shading) > 0.0 {
                     let color_refl = get_ray_color(
                         &Ray {
@@ -104,29 +104,31 @@ fn get_ray_color<RandGenType: RngCore>(
                     );
                     total_color += color_refl.component_mul(&primitive.color)
                         * (1.0 / FP_PI)
-                        * rnd_vec.dot(&intersection.normal_geometry)
+                        * rnd_vec.dot(&intersection.normal_shading)
                         * (1.0 / pdf);
                 }
                 total_color
             }
             Material::Metallic => {
                 let shading_normal = &intersection.normal_shading;
-                // dbg!(shading_normal);
-                // dbg!(&intersection.normal_geometry);
                 let reflected_direction = get_reflection_ray(&ray.direction, shading_normal);
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let reflection_ray = Ray {
                     origin: corrected_point,
                     direction: reflected_direction,
                 };
-                get_ray_color(
-                    &reflection_ray,
-                    scene,
-                    recursion_depth - 1,
-                    distribution,
-                    rng,
-                )
-                .component_mul(&primitive.color)
+                if reflected_direction.dot(&intersection.normal_geometry) > 0.0 {
+                    get_ray_color(
+                        &reflection_ray,
+                        scene,
+                        recursion_depth - 1,
+                        distribution,
+                        rng,
+                    )
+                    .component_mul(&primitive.color)
+                } else {
+                    scene.bg_color
+                }
             }
             Material::Dielectric => {
                 let cosine = -ray.direction.normalize().dot(&intersection.normal_geometry);

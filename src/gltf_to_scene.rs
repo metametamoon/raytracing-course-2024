@@ -213,8 +213,8 @@ fn read_primitives<'a>(
                 if base[3] < 1.0 {
                     Material::Dielectric
                 } else if roughness.metallic_factor() > 0.0 {
-                    // Material::Metallic
-                    Material::Diffused // wrong!! temporary
+                    Material::Metallic
+                    // Material::Diffused
                 } else {
                     Material::Diffused
                 }
