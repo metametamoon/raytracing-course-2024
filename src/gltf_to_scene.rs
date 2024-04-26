@@ -1,12 +1,12 @@
 use gltf::buffer::Data;
 use gltf::camera::Projection::Perspective;
-use gltf::Document;
 use gltf::mesh::util::ReadIndices;
-use na::{Matrix4, Matrix4x1};
+use gltf::Document;
+use na::{Matrix4, Matrix4x1, Quaternion, UnitQuaternion};
 
 use crate::aabb::calculate_aabb_for_object;
 use crate::bvh::create_bvh_tree;
-use crate::geometry::{EPS, Fp, Material, Object3D, Shape3D, Vec3f, Vec4f};
+use crate::geometry::{Fp, Material, Object3D, Shape3D, Vec3f, Vec4f, EPS};
 use crate::scene::{Primitive, Scene};
 
 #[derive(Debug)]
@@ -26,6 +26,7 @@ pub fn convert_gltf_to_scene(
     samples: i32,
 ) -> Scene {
     let default_transformation = Matrix4::<Fp>::identity();
+    let default_rotation = Quaternion::<Fp>::identity();
     let mut camera = Camera {
         camera_position: Default::default(),
         camera_forward: Default::default(),
@@ -38,8 +39,16 @@ pub fn convert_gltf_to_scene(
     let mut light_primitives = Vec::<Primitive>::new();
     let scenes = gltf.scenes().collect::<Vec<_>>();
     dbg!(scenes.len());
-    for  node in gltf.nodes() {
-        read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation)
+    for node in gltf.nodes() {
+        read_primitives(
+            &mut camera,
+            &mut finite_primitives,
+            &mut light_primitives,
+            &buffers,
+            &node,
+            &default_transformation,
+            &default_rotation,
+        )
     }
     // for gltf_scene in scenes {
     //     for node in gltf_scene.nodes() {
@@ -67,13 +76,16 @@ pub fn convert_gltf_to_scene(
     }
 }
 
-
 fn pp4_to_r3(v: Vec4f) -> Vec3f {
     Vec3f::new(v.x / v.w, v.y / v.w, v.z / v.w)
 }
 
 fn pp4_vector_slice(v: Vec4f) -> Vec3f {
     Vec3f::new(v.x, v.y, v.z)
+}
+
+fn to_vec3f(p: &[f32; 3]) -> Vec3f {
+    Vec3f::new(p[0] as Fp, p[1] as Fp, p[2] as Fp)
 }
 
 fn read_primitives<'a>(
@@ -83,23 +95,36 @@ fn read_primitives<'a>(
     buffers: &Vec<Data>,
     node: &gltf::Node,
     transformation: &Matrix4<Fp>,
+    rotation: &Quaternion<Fp>,
 ) {
-    eprintln!("Node #{}", node.index());
+    println!("Node #{}", node.index());
     let local_transformation_slice = node.transform().matrix();
-    eprintln!("Local transform good form {:#?}", node.transform().decomposed());
+    println!(
+        "Local transform good form {:#?}",
+        node.transform().decomposed()
+    );
+    let current_rotation = UnitQuaternion::from_quaternion(Quaternion::<Fp>::new(
+        node.transform().decomposed().1[3] as Fp,
+        node.transform().decomposed().1[0] as Fp,
+        node.transform().decomposed().1[1] as Fp,
+        node.transform().decomposed().1[2] as Fp,
+    ) * rotation);
+    
     let local_transformation = Matrix4::from_fn(|y, x| {
         println!("y={} x={} res={}", y, x, local_transformation_slice[x][y]);
         local_transformation_slice[x][y] as Fp
     });
     // println!("local transform slice: {:#?}", local_transformation_slice);
-    dbg!(local_transformation_slice);
-    dbg!(local_transformation);
+    // dbg!(local_transformation_slice);
+    // dbg!(local_transformation);
     // println!("local transform: {:#?}", local_transformation);
     let m_transformation = transformation * local_transformation;
     println!("transform: {:#?}", transformation);
-    println!("m_transform: {:#?}", m_transformation);
-    if let Some(node_camera) = node.camera(){
-        let Perspective(persp) = node_camera.projection() else { todo!() };
+    // println!("m_transform: {:#?}", m_transformation);
+    if let Some(node_camera) = node.camera() {
+        let Perspective(persp) = node_camera.projection() else {
+            todo!()
+        };
         camera.camera_fov_y = persp.yfov() as Fp;
         camera.camera_fov_x = (persp.aspect_ratio().unwrap_or(1.0) * persp.yfov()) as Fp;
         let camera_position = m_transformation * Vec4f::w();
@@ -113,10 +138,13 @@ fn read_primitives<'a>(
     }
 
     if let Some(mesh) = node.mesh() {
+        println!("Mesh #{}", mesh.index());
         let primitive = mesh.primitives().next().unwrap();
         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
         let material = primitive.material();
-        let Some(indices) = reader.read_indices() else { todo!() };
+        let Some(indices) = reader.read_indices() else {
+            todo!()
+        };
         let indices = if let ReadIndices::U16(indices) = indices {
             println!("u16 indices ({})!", indices.len());
             indices
@@ -148,14 +176,20 @@ fn read_primitives<'a>(
             let default_normal = (b - a).cross(&(c - a)).normalize();
             let (a_norm, b_norm, c_norm) = match maybe_normals {
                 Some(ref normals) => {
+                    println!("Some normals!");
                     (
-                        to_vec3f_with_transform(&normals[triangle[0] as usize]),
-                        to_vec3f_with_transform(&normals[triangle[0] as usize]),
-                        to_vec3f_with_transform(&normals[triangle[0] as usize])
-                        )
+                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[0] as usize])),
+                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[1] as usize])),
+                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[2] as usize])),
+                    )
                 }
-                None => { (default_normal, default_normal, default_normal)}
+                None => {
+                    println!("None normals!");
+                    (default_normal, default_normal, default_normal)
+                }
             };
+            // println!("Avg shading normal:{}", (a_norm + b_norm + c_norm) * (1.0 / 3.0));
+            // println!("Geom normal:{}", default_normal);
             let object3d = Object3D {
                 shape: Shape3D::Triangle {
                     a: a,
@@ -163,7 +197,7 @@ fn read_primitives<'a>(
                     c: c,
                     a_norm,
                     b_norm,
-                    c_norm
+                    c_norm,
                 }
                 .clone(),
                 position: Vec3f::new(0.0, 0.0, 0.0),
@@ -179,7 +213,8 @@ fn read_primitives<'a>(
                 if base[3] < 1.0 {
                     Material::Dielectric
                 } else if roughness.metallic_factor() > 0.0 {
-                    Material::Metallic
+                    // Material::Metallic
+                    Material::Diffused // wrong!! temporary
                 } else {
                     Material::Diffused
                 }
@@ -208,6 +243,14 @@ fn read_primitives<'a>(
         }
     }
     for child in node.children() {
-        read_primitives(camera, finite_primitives, light_primitives, buffers, &child, &m_transformation);
+        read_primitives(
+            camera,
+            finite_primitives,
+            light_primitives,
+            buffers,
+            &child,
+            &m_transformation,
+            &current_rotation.into_inner(),
+        );
     }
 }

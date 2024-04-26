@@ -86,11 +86,12 @@ fn get_ray_color<RandGenType: RngCore>(
             Material::Diffused => {
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let mut total_color = primitive.emission;
+                // dbg!(&intersection.normal_shading);
                 let rnd_vec = distribution
-                    .sample_unit_vector(&corrected_point, &intersection.normal_geometry, rng)
+                    .sample_unit_vector(&corrected_point, &intersection.normal_shading, rng)
                     .into_inner();
-                let pdf = distribution.pdf(&corrected_point, &intersection.normal_geometry, &rnd_vec);
-                if pdf > 0.0 && rnd_vec.dot(&intersection.normal_geometry) > 0.0 {
+                let pdf = distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
+                if pdf > 0.0 && rnd_vec.dot(&intersection.normal_shading) > 0.0 {
                     let color_refl = get_ray_color(
                         &Ray {
                             origin: corrected_point,
@@ -109,7 +110,10 @@ fn get_ray_color<RandGenType: RngCore>(
                 total_color
             }
             Material::Metallic => {
-                let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal_geometry);
+                let shading_normal = &intersection.normal_shading;
+                // dbg!(shading_normal);
+                // dbg!(&intersection.normal_geometry);
+                let reflected_direction = get_reflection_ray(&ray.direction, shading_normal);
                 let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
                 let reflection_ray = Ray {
                     origin: corrected_point,

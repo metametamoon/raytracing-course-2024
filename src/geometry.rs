@@ -85,7 +85,7 @@ fn intersect_all_points(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> ArrayVec
             c,
             a_norm,
             b_norm,
-            c_norm
+            c_norm,
         } => intersect_with_triangle(ray, upper_bound, a, b, c, a_norm, b_norm, c_norm),
     }
 }
@@ -112,15 +112,20 @@ fn intersect_with_triangle(
             let (u, v, t) = (uvt.x, uvt.y, uvt.z);
             if 0.0 <= u && 0.0 <= v && u + v <= 1.0 && 0.0 < t && t < upper_bound {
                 let outer_normal = (b - a).cross(&(c - a)).normalize();
-                let (is_outer_to_inner, normal) = if outer_normal.dot(&ray.direction) < 0.0 {
-                    (true, outer_normal)
+                let shading_normal =
+                    (a_norm + (b_norm - a_norm) * u + (c_norm - a_norm) * v).normalize();
+                // println!("u={} v={}", u, v);
+                // println!("outer_norm={}", outer_normal);
+                // println!("shading={}", shading_normal);
+                let (is_outer_to_inner, normal_geometry, normal_shading) = if outer_normal.dot(&ray.direction) < 0.0 {
+                    (true, outer_normal, shading_normal)
                 } else {
-                    (false, -outer_normal)
+                    (false, -outer_normal, -shading_normal)
                 };
                 result.push(Intersection {
                     offset: t,
-                    normal_geometry: normal.clone(),
-                    normal_shading: normal,
+                    normal_geometry,
+                    normal_shading,
                     is_outer_to_inner,
                 })
             }
@@ -206,7 +211,9 @@ pub fn intersect_ray_with_object3d(
             .transform_vector(&transposed_ray.direction),
     };
     if let Some(mut intersection) = intersect(&rotated_ray, &object.shape, min_dist) {
-        intersection.normal_geometry = object.rotation.transform_vector(&intersection.normal_geometry);
+        intersection.normal_geometry = object
+            .rotation
+            .transform_vector(&intersection.normal_geometry);
         Some(intersection)
     } else {
         None
@@ -234,7 +241,9 @@ pub fn intersect_ray_with_object3d_all_points(
     };
     let mut result = intersect_all_points(&rotated_ray, &object3d.shape, Fp::INFINITY);
     for intersection in &mut result {
-        intersection.normal_geometry = object3d.rotation.transform_vector(&intersection.normal_geometry);
+        intersection.normal_geometry = object3d
+            .rotation
+            .transform_vector(&intersection.normal_geometry);
     }
     (result, rotated_ray)
 }
