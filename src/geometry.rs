@@ -45,12 +45,6 @@ pub struct Object3D {
     pub rotation: UnitQuaternion<Fp>,
 }
 
-#[derive(Clone, Debug)]
-pub enum Material {
-    Dielectric,
-    Metallic,
-    Diffused,
-}
 
 pub static EPS: Fp = 0.00001;
 
@@ -112,15 +106,17 @@ fn intersect_with_triangle(
             let (u, v, t) = (uvt.x, uvt.y, uvt.z);
             if 0.0 <= u && 0.0 <= v && u + v <= 1.0 && 0.0 < t && t < upper_bound {
                 let outer_normal = (b - a).cross(&(c - a)).normalize();
-                let shading_normal =
+                let normal_shading =
                     (a_norm + (b_norm - a_norm) * u + (c_norm - a_norm) * v).normalize();
-                // println!("u={} v={}", u, v);
-                // println!("outer_norm={}", outer_normal);
-                // println!("shading={}", shading_normal);
-                let (is_outer_to_inner, normal_geometry, normal_shading) = if outer_normal.dot(&ray.direction) < 0.0 {
-                    (true, outer_normal, shading_normal)
+                let normal_shading = if normal_shading.dot(&ray.direction) < 0.0 {
+                    normal_shading
                 } else {
-                    (false, -outer_normal, -shading_normal)
+                    -normal_shading
+                };
+                let (is_outer_to_inner, normal_geometry) = if outer_normal.dot(&ray.direction) < 0.0 {
+                    (true, outer_normal)
+                } else {
+                    (false, -outer_normal)
                 };
                 result.push(Intersection {
                     offset: t,

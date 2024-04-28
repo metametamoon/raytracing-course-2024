@@ -1,12 +1,25 @@
 use crate::aabb::Aabb;
 use crate::bvh::BvhTree;
-use crate::geometry::{Fp, Material, Object3D, Vec3f};
+use crate::geometry::{Fp, Object3D, Vec3f};
+
+#[derive(Clone, Debug)]
+pub enum MaterialEnumerated {
+    Dielectric,
+    Metallic,
+    Diffused,
+}
+
+#[derive(Clone, Debug)]
+pub struct Material {
+    pub base_color_factor: Vec3f,
+    pub metallic_factor: Fp,
+    pub metallic_roughness: Fp,
+}
 
 #[derive(Clone, Debug)]
 pub struct Primitive {
     pub object3d: Object3D,
     pub aabb: Aabb,
-    pub color: Vec3f,
     pub material: Material,
     pub ior: Fp,
     pub emission: Vec3f,

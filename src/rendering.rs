@@ -1,4 +1,5 @@
-use rand::{Rng, RngCore};
+use indicatif::{ParallelProgressIterator, ProgressBar};
+use rand::{Rng, RngCore, thread_rng};
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::iter::ParallelIterator;
@@ -8,14 +9,13 @@ use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
 use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
-use crate::geometry::Material;
 use crate::geometry::Ray;
 use crate::geometry::Vec3f;
 use crate::geometry::EPS;
 use crate::geometry::FP_PI;
 use crate::geometry::{get_reflection_ray, Fp};
 use crate::geometry::{intersect_ray_with_object3d, Intersection};
-use crate::scene::{Primitive, Scene};
+use crate::scene::{Material, MaterialEnumerated, Primitive, Scene};
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     validate_bvh(&scene.bvh_finite_primitives);
@@ -30,17 +30,25 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
     let sample_distribution = MixDistribution { distributions };
 
     let sample_distr = &sample_distribution;
-
-    (0..scene.height)
+    // {
+    //     let mut rng: Xoshiro256StarStar =
+    //         Xoshiro256StarStar::seed_from_u64(0u64);
+    //     let ray_to_pixel = get_ray_to_pixel(20, 200, scene, &mut rng);
+    //     let color = get_ray_color(&ray_to_pixel, scene, scene.ray_depth, sample_distr, &mut rng);
+    //     println!("My color:{}", color);
+    // }
+    let result = (0..scene.height)
         .collect::<Vec<_>>()
         .par_iter()
+        .progress_count(scene.height as u64)
         .flat_map_iter(|y| {
-            dbg!(y);
+            // dbg!(y);
             let dist = sample_distr;
             let mut rng: Xoshiro256StarStar =
                 Xoshiro256StarStar::seed_from_u64((scene.width * y) as u64);
             (0..scene.width).flat_map(move |x| {
                 let color = {
+                    
                     let total_color = (0..scene.samples)
                         .map(|_: i32| {
                             let ray_to_pixel = get_ray_to_pixel(x, *y, scene, &mut rng);
@@ -53,7 +61,9 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                 color_to_pixel(color)
             })
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+    // bar.finish();
+    result
 }
 
 fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
@@ -71,6 +81,18 @@ fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
     }
 }
 
+fn chi_plus(x: Fp) -> Fp {
+    if x > 0.0 {
+        x
+    } else {
+        0.0
+    }
+}
+
+fn safe_sqrt(x: Fp) -> Fp {
+    Fp::max(0.0, x).sqrt()
+}
+
 fn get_ray_color<RandGenType: RngCore>(
     ray: &Ray,
     scene: &Scene,
@@ -82,118 +104,90 @@ fn get_ray_color<RandGenType: RngCore>(
         return Vec3f::default();
     }
     match intersect_ray_with_scene(ray, scene) {
-        Some((primitive, intersection)) => match primitive.material {
-            Material::Diffused => {
-                let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
-                let mut total_color = primitive.emission;
-                let rnd_vec = distribution
-                    .sample_unit_vector(&corrected_point, &intersection.normal_shading, rng)
-                    .into_inner();
-                let pdf =
-                    distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
-                if pdf > 0.0 && rnd_vec.dot(&intersection.normal_shading) > 0.0 {
-                    let color_refl = get_ray_color(
-                        &Ray {
-                            origin: corrected_point,
-                            direction: rnd_vec,
-                        },
-                        scene,
-                        recursion_depth - 1,
-                        distribution,
-                        rng,
-                    );
-                    total_color += color_refl.component_mul(&primitive.color)
-                        * (1.0 / FP_PI)
-                        * rnd_vec.dot(&intersection.normal_shading)
-                        * (1.0 / pdf);
-                }
-                total_color
+        Some((primitive, intersection)) => {
+            let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
+            let mut total_color = primitive.emission;
+            let rnd_vec = distribution
+                .sample_unit_vector(&corrected_point, &intersection.normal_shading, rng)
+                .into_inner();
+            let pdf = distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
+            if pdf > 0.0 && rnd_vec.dot(&intersection.normal_geometry) > 0.0 {
+                let color_refl = get_ray_color(
+                    &Ray {
+                        origin: corrected_point,
+                        direction: rnd_vec,
+                    },
+                    scene,
+                    recursion_depth - 1,
+                    distribution,
+                    rng,
+                );
+                // if recursion_depth == 6 {
+                //     println!("Dbg");
+                // }
+                let brdf = brdf(
+                    &-ray.direction,
+                    &intersection.normal_shading,
+                    &rnd_vec,
+                    &primitive.material,
+                );
+                total_color += color_refl.component_mul(&brdf)
+                    * rnd_vec.dot(&intersection.normal_shading)
+                    * (1.0 / pdf);
             }
-            Material::Metallic => {
-                let shading_normal = &intersection.normal_shading;
-                let reflected_direction = get_reflection_ray(&ray.direction, shading_normal);
-                let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
-                let reflection_ray = Ray {
-                    origin: corrected_point,
-                    direction: reflected_direction,
-                };
-                if reflected_direction.dot(&intersection.normal_geometry) > 0.0 {
-                    get_ray_color(
-                        &reflection_ray,
-                        scene,
-                        recursion_depth - 1,
-                        distribution,
-                        rng,
-                    )
-                    .component_mul(&primitive.color)
-                } else {
-                    scene.bg_color
-                }
-            }
-            Material::Dielectric => {
-                let cosine = -ray.direction.normalize().dot(&intersection.normal_geometry);
-                let cosine = Fp::min(cosine, 1.0);
-                let (eta1, eta2) = if intersection.is_outer_to_inner {
-                    (1.0, primitive.ior)
-                } else {
-                    (primitive.ior, 1.0)
-                };
-                let sine = (1.0 - cosine.powi(2)).sqrt();
-                let sine2 = sine * eta1 / eta2;
-                let corrected_point_backward =
-                    ray.origin + ray.direction * (intersection.offset - EPS);
-                let corrected_point_forward =
-                    ray.origin + ray.direction * (intersection.offset + EPS);
-                if sine2 > 1.0 {
-                    get_reflection_color(
-                        ray,
-                        scene,
-                        recursion_depth,
-                        &intersection,
-                        corrected_point_backward,
-                        distribution,
-                        rng,
-                    )
-                } else {
-                    let r0 = ((eta1 - eta2) / (eta1 + eta2)).powi(2);
-                    let reflected = r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-                    if rng.gen::<Fp>() < reflected {
-                        get_reflection_color(
-                            ray,
-                            scene,
-                            recursion_depth,
-                            &intersection,
-                            corrected_point_backward,
-                            distribution,
-                            rng,
-                        )
-                    } else {
-                        let refracted_color = {
-                            let cosine2 = (1.0 - sine2 * sine2).sqrt();
-                            let new_dir = (eta1 / eta2) * ray.direction.normalize()
-                                + (eta1 / eta2 * cosine - cosine2) * intersection.normal_geometry;
-                            get_ray_color(
-                                &Ray {
-                                    origin: corrected_point_forward,
-                                    direction: new_dir,
-                                },
-                                scene,
-                                recursion_depth - 1,
-                                distribution,
-                                rng,
-                            )
-                        };
-                        if intersection.is_outer_to_inner {
-                            refracted_color.component_mul(&primitive.color)
-                        } else {
-                            refracted_color
-                        }
-                    }
-                }
-            }
-        },
+            total_color
+        }
         None => scene.bg_color,
     }
+}
+
+fn fresnel_term(f0: &Vec3f, f90: &Vec3f, h: &Vec3f, l: &Vec3f) -> Vec3f {
+    f0 + (f90 - f0) * (1.0 - h.dot(l)).powi(5)
+}
+
+fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
+    let h = (l + v).normalize();
+    let diffuse_brdf = material.base_color_factor / FP_PI;
+    let specular_brdf = specular_brdf(l, n, v, &h, material);
+
+    let metal_brdf = specular_brdf
+        * fresnel_term(
+            &material.base_color_factor,
+            &Vec3f::from_element(1.0),
+            &h,
+            l,
+        );
+    let dielectric_brdf = {
+        let f = fresnel_term(&Vec3f::from_element(0.04), &Vec3f::from_element(1.0), &h, l);
+        specular_brdf * f + diffuse_brdf.component_mul(&(Vec3f::from_element(1.0) - f))
+    };
+    metal_brdf * material.metallic_factor + dielectric_brdf * (1.0 - material.metallic_factor)
+}
+
+fn specular_brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, h: &Vec3f, material: &Material) -> Fp {
+    let alpha: Fp = material.metallic_roughness.powi(2); // roughness^2
+    let d = {
+        let hn = h.dot(n);
+        let numerator = alpha.powi(2) * chi_plus(hn);
+        let denominator = FP_PI * ((alpha.powi(2) - 1.0) * hn * hn + 1.0).powi(2);
+        numerator / denominator
+    };
+    let g = {
+        let g1 = |n: &Vec3f, x: &Vec3f| {
+            let nx = n.dot(x);
+            let a = {
+                let numerator = nx * chi_plus(nx);
+                let denominator = alpha * safe_sqrt(1.0 - nx.powi(2));
+                numerator / denominator
+            };
+            let under_sqrt = (1.0 + 1.0 / (a * a));
+            let lambda = 0.5 * (under_sqrt.sqrt() - 1.0);
+            1.0 / (1.0 + lambda)
+        };
+        g1(n, l) * g1(n, v)
+    };
+    let component = d * g / (4.0 * (l.dot(n)) * (v.dot(n)));
+    component
 }
 
 fn get_reflection_color<RandGenType: RngCore>(

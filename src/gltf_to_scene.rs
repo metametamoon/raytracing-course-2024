@@ -6,8 +6,8 @@ use na::{Matrix4, Matrix4x1, Quaternion, UnitQuaternion};
 
 use crate::aabb::calculate_aabb_for_object;
 use crate::bvh::create_bvh_tree;
-use crate::geometry::{Fp, Material, Object3D, Shape3D, Vec3f, Vec4f, EPS};
-use crate::scene::{Primitive, Scene};
+use crate::geometry::{Fp, Object3D, Shape3D, Vec3f, Vec4f, EPS};
+use crate::scene::{Material, MaterialEnumerated, Primitive, Scene};
 
 #[derive(Debug)]
 struct Camera {
@@ -55,8 +55,10 @@ pub fn convert_gltf_to_scene(
     //         read_primitives(&mut camera, &mut finite_primitives, &mut light_primitives, &buffers, &node, &default_transformation);
     //     }
     // }
-    eprintln!("here!");
+    // eprintln!("here!");
     dbg!(&camera);
+    dbg!(finite_primitives.len());
+    dbg!(light_primitives.len());
     Scene {
         width,
         height,
@@ -84,7 +86,11 @@ fn pp4_vector_slice(v: Vec4f) -> Vec3f {
     Vec3f::new(v.x, v.y, v.z)
 }
 
-fn to_vec3f(p: &[f32; 3]) -> Vec3f {
+fn slice3_to_vec3f(p: &[f32; 3]) -> Vec3f {
+    Vec3f::new(p[0] as Fp, p[1] as Fp, p[2] as Fp)
+}
+
+fn slice4_to_vec3f(p: &[f32; 4]) -> Vec3f {
     Vec3f::new(p[0] as Fp, p[1] as Fp, p[2] as Fp)
 }
 
@@ -141,17 +147,19 @@ fn read_primitives<'a>(
         println!("Mesh #{}", mesh.index());
         let primitive = mesh.primitives().next().unwrap();
         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-        let material = primitive.material();
+        let gltfMaterial = primitive.material();
         let Some(indices) = reader.read_indices() else {
             todo!()
         };
-        let indices = if let ReadIndices::U16(indices) = indices {
-            println!("u16 indices ({})!", indices.len());
-            indices
-        } else {
-            panic!("Only indexed rendering supported!")
-        }
-        .collect::<Vec<_>>();
+        let indices = match indices {
+            ReadIndices::U16(indices) => {
+                indices.map(|x| x as usize).collect::<Vec<_>>()
+            }
+            ReadIndices::U8(indices) => { indices.map(|x| x as usize).collect::<Vec<_>>() }
+            ReadIndices::U32(indices) => {
+                indices.map(|x| x as usize).collect::<Vec<_>>()
+            }
+        };
 
         // println!("Node #{} has some {} indices!", node.index(), indices);
         let positions = reader
@@ -170,17 +178,17 @@ fn read_primitives<'a>(
                     point[2] / point[3],
                 )
             };
-            let a = to_vec3f_with_transform(&positions[triangle[0] as usize]);
-            let b = to_vec3f_with_transform(&positions[triangle[1] as usize]);
-            let c = to_vec3f_with_transform(&positions[triangle[2] as usize]);
+            let a = to_vec3f_with_transform(&positions[triangle[0]]);
+            let b = to_vec3f_with_transform(&positions[triangle[1]]);
+            let c = to_vec3f_with_transform(&positions[triangle[2]]);
             let default_normal = (b - a).cross(&(c - a)).normalize();
             let (a_norm, b_norm, c_norm) = match maybe_normals {
                 Some(ref normals) => {
-                    println!("Some normals!");
+                    // println!("Some normals!");
                     (
-                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[0] as usize])),
-                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[1] as usize])),
-                        current_rotation.transform_vector(&to_vec3f(&normals[triangle[2] as usize])),
+                        current_rotation.transform_vector(&slice3_to_vec3f(&normals[triangle[0]])),
+                        current_rotation.transform_vector(&slice3_to_vec3f(&normals[triangle[1]])),
+                        current_rotation.transform_vector(&slice3_to_vec3f(&normals[triangle[2]])),
                     )
                 }
                 None => {
@@ -188,13 +196,11 @@ fn read_primitives<'a>(
                     (default_normal, default_normal, default_normal)
                 }
             };
-            // println!("Avg shading normal:{}", (a_norm + b_norm + c_norm) * (1.0 / 3.0));
-            // println!("Geom normal:{}", default_normal);
             let object3d = Object3D {
                 shape: Shape3D::Triangle {
-                    a: a,
-                    b: b,
-                    c: c,
+                    a,
+                    b,
+                    c,
                     a_norm,
                     b_norm,
                     c_norm,
@@ -203,25 +209,16 @@ fn read_primitives<'a>(
                 position: Vec3f::new(0.0, 0.0, 0.0),
                 rotation: Default::default(),
             };
-            let roughness = material.pbr_metallic_roughness();
-            let color = {
-                let base = roughness.base_color_factor();
-                Vec3f::new(base[0] as Fp, base[1] as Fp, base[2] as Fp)
-            };
-            let material_type = {
-                let base = roughness.base_color_factor();
-                if base[3] < 1.0 {
-                    Material::Dielectric
-                } else if roughness.metallic_factor() > 0.0 {
-                    Material::Metallic
-                    // Material::Diffused
-                } else {
-                    Material::Diffused
-                }
+            let roughness = gltfMaterial.pbr_metallic_roughness();
+            // dbg!(gltfMaterial.name());
+            let material = Material {
+                base_color_factor: slice4_to_vec3f(&roughness.base_color_factor()),  // aka color
+                metallic_factor: roughness.metallic_factor() as Fp,
+                metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.3) as Fp,
             };
             let emission = {
-                let emission = material.emissive_factor();
-                let emission_strength = material.emissive_strength().unwrap_or(1.0) as Fp;
+                let emission = gltfMaterial.emissive_factor();
+                let emission_strength = gltfMaterial.emissive_strength().unwrap_or(1.0) as Fp;
                 Vec3f::new(
                     emission[0] as Fp * emission_strength,
                     emission[1] as Fp * emission_strength,
@@ -231,8 +228,7 @@ fn read_primitives<'a>(
             let primitive = Primitive {
                 object3d: object3d.clone(),
                 aabb: calculate_aabb_for_object(&object3d),
-                color,
-                material: material_type,
+                material,
                 ior: 1.5,
                 emission,
             };
