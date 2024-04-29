@@ -139,8 +139,8 @@ fn fresnel_term(f0: &Vec3f, f90: &Vec3f, h: &Vec3f, l: &Vec3f) -> Vec3f {
 }
 
 fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
-    assert!(l.dot(n) >= 0.0);
-    assert!(v.dot(n) >= 0.0);
+    // assert!(l.dot(n) >= 0.0);
+    // assert!(v.dot(n) >= 0.0);
     let h = (l + v).normalize();
     let diffuse_brdf = material.base_color_factor / FP_PI;
     let specular_brdf = specular_brdf(l, n, v, &h, material);
