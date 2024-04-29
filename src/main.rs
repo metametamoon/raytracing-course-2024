@@ -7,6 +7,7 @@ mod rendering;
 mod scene;
 #[cfg(test)]
 mod tests;
+mod utils;
 
 extern crate nalgebra as na;
 

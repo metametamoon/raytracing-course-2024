@@ -57,7 +57,7 @@ fn intersect(ray: &Ray, shape: &Shape3D, upper_bound: Fp) -> Option<Intersection
     }
 }
 
-pub fn get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
+pub fn _get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
     let projection = -ray.dot(normal);
     ray + normal * projection * 2.0
 }

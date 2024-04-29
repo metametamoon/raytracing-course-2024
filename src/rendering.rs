@@ -1,21 +1,22 @@
-use indicatif::{ParallelProgressIterator, ProgressBar};
-use rand::{Rng, RngCore, thread_rng};
+use indicatif::ParallelProgressIterator;
+use rand::{Rng, RngCore};
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 
 use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
+use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
-use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
-use crate::geometry::Ray;
-use crate::geometry::Vec3f;
+use crate::geometry::{Fp};
+use crate::geometry::{intersect_ray_with_object3d, Intersection};
 use crate::geometry::EPS;
 use crate::geometry::FP_PI;
-use crate::geometry::{get_reflection_ray, Fp};
-use crate::geometry::{intersect_ray_with_object3d, Intersection};
-use crate::scene::{Material, MaterialEnumerated, Primitive, Scene};
+use crate::geometry::Ray;
+use crate::geometry::Vec3f;
+use crate::scene::{Material, Primitive, Scene};
+use crate::utils::{chi_plus, safe_sqrt};
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     validate_bvh(&scene.bvh_finite_primitives);
@@ -81,17 +82,9 @@ fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
     }
 }
 
-fn chi_plus(x: Fp) -> Fp {
-    if x > 0.0 {
-        x
-    } else {
-        0.0
-    }
-}
 
-fn safe_sqrt(x: Fp) -> Fp {
-    Fp::max(0.0, x).sqrt()
-}
+
+
 
 fn get_ray_color<RandGenType: RngCore>(
     ray: &Ray,
@@ -126,9 +119,9 @@ fn get_ray_color<RandGenType: RngCore>(
                 //     println!("Dbg");
                 // }
                 let brdf = brdf(
-                    &-ray.direction,
-                    &intersection.normal_shading,
                     &rnd_vec,
+                    &intersection.normal_shading,
+                    &-ray.direction,
                     &primitive.material,
                 );
                 total_color += color_refl.component_mul(&brdf)
@@ -161,12 +154,14 @@ fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
         let f = fresnel_term(&Vec3f::from_element(0.04), &Vec3f::from_element(1.0), &h, l);
         specular_brdf * f + diffuse_brdf.component_mul(&(Vec3f::from_element(1.0) - f))
     };
+    // metal_brdf
     metal_brdf * material.metallic_factor + dielectric_brdf * (1.0 - material.metallic_factor)
+    // Vec3f::from_element(specular_brdf)
 }
 
 fn specular_brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, h: &Vec3f, material: &Material) -> Fp {
     let alpha: Fp = material.metallic_roughness.powi(2); // roughness^2
-    let d = {
+    let d: Fp = {
         let hn = h.dot(n);
         let numerator = alpha.powi(2) * chi_plus(hn);
         let denominator = FP_PI * ((alpha.powi(2) - 1.0) * hn * hn + 1.0).powi(2);
@@ -180,7 +175,7 @@ fn specular_brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, h: &Vec3f, material: &Material
                 let denominator = alpha * safe_sqrt(1.0 - nx.powi(2));
                 numerator / denominator
             };
-            let under_sqrt = (1.0 + 1.0 / (a * a));
+            let under_sqrt = 1.0 + 1.0 / (a * a);
             let lambda = 0.5 * (under_sqrt.sqrt() - 1.0);
             1.0 / (1.0 + lambda)
         };
@@ -190,27 +185,19 @@ fn specular_brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, h: &Vec3f, material: &Material
     component
 }
 
-fn get_reflection_color<RandGenType: RngCore>(
-    ray: &Ray,
-    scene: &Scene,
-    recursion_depth: i32,
-    intersection: &Intersection,
-    corrected_point: Vec3f,
-    distribution: &dyn SampleDistribution<RandGenType>,
-    rng: &mut RandGenType,
-) -> Vec3f {
-    let reflected_direction = get_reflection_ray(&ray.direction, &intersection.normal_geometry);
-    let reflection_ray = Ray {
-        origin: corrected_point,
-        direction: reflected_direction,
+#[test]
+fn test_metalic_brdf() {
+    let v = Vec3f::new(-1.0, 0.0, 1.0).normalize();
+    let l = Vec3f::new(1.0, 0.0, 1.0).normalize();
+    let n = (v + l).normalize();
+    let h = n.clone();
+    let material = Material {
+        base_color_factor: Vec3f::new(1.0, 0.0, 0.0),
+        metallic_factor: 1.0,
+        metallic_roughness: 0.05,
     };
-    get_ray_color(
-        &reflection_ray,
-        scene,
-        recursion_depth - 1,
-        distribution,
-        rng,
-    )
+    println!("good brdf = {}", specular_brdf(&l, &n, &v, &h, &material));
+    println!("bad brdf = {}", specular_brdf(&l, &n, &l, &l, &material));
 }
 
 fn intersect_ray_with_scene<'a>(

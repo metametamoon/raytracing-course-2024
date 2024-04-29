@@ -2,12 +2,6 @@ use crate::aabb::Aabb;
 use crate::bvh::BvhTree;
 use crate::geometry::{Fp, Object3D, Vec3f};
 
-#[derive(Clone, Debug)]
-pub enum MaterialEnumerated {
-    Dielectric,
-    Metallic,
-    Diffused,
-}
 
 #[derive(Clone, Debug)]
 pub struct Material {

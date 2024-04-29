@@ -1,11 +1,14 @@
 use na::Unit;
 use rand::Rng;
+use rand_distr::num_traits::Inv;
 use rand_distr::{Distribution, Normal};
 
-use crate::bvh::{BvhTree, intersect_with_bvh_all_points};
+use crate::bvh::{intersect_with_bvh_all_points, BvhTree};
 use crate::geometry::{
-    Fp, FP_PI, intersect_ray_with_object3d_all_points, Object3D, Ray, Shape3D, Vec3f,
+    intersect_ray_with_object3d_all_points, Fp, Object3D, Ray, Shape3D, Vec3f, FP_PI,
 };
+use crate::scene::Material;
+use crate::utils::{chi_plus, safe_sqrt};
 
 pub trait SampleDistribution<R: Rng> {
     fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f>;
@@ -138,7 +141,8 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
                 let vector_on_sample = global_coords_point - point;
                 let omega = vector_on_sample.normalize();
                 local_pdf
-                    * (vector_on_sample.norm_squared() / (intersection.normal_geometry.dot(&omega)).abs())
+                    * (vector_on_sample.norm_squared()
+                        / (intersection.normal_geometry.dot(&omega)).abs())
             })
             .sum();
         pdf
@@ -196,5 +200,68 @@ impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
             .map(|distr| distr.pdf(point, normal, direction))
             .sum::<Fp>();
         ans / (self.distributions.len() as Fp)
+    }
+}
+
+struct VndfDistribution {}
+
+impl VndfDistribution {
+    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f, material: &Material) -> Fp {
+        let alpha: Fp = material.metallic_roughness.powi(2); // roughness^2
+        let h = normal;
+        let n = normal;
+        let l = direction;
+        let v = todo!();
+        let d = {
+            let hn = h.dot(n);
+            let numerator = alpha.powi(2) * chi_plus(hn);
+            let denominator = FP_PI * ((alpha.powi(2) - 1.0) * hn * hn + 1.0).powi(2);
+            numerator / denominator
+        };
+        let g1 = |x: &Vec3f| {
+            let nx = n.dot(x);
+            let a = {
+                let numerator = nx * chi_plus(nx);
+                let denominator = alpha * safe_sqrt(1.0 - nx.powi(2));
+                numerator / denominator
+            };
+            let under_sqrt = 1.0 + 1.0 / (a * a);
+            let lambda = 0.5 * (under_sqrt.sqrt() - 1.0);
+            1.0 / (1.0 + lambda)
+        };
+
+        // let g = {
+        //     g1(n, l) * g1(n, v)
+        // };
+        // Dv(N) / (4 * (V dot N))
+        // Dv(N) = G1(V) * max(0, V * N) * D(N) / * (V * Z)
+        0.0
+    }
+
+    fn sample_ggx_vndf<R: Rng>(Ve: Vec3f, alpha: Fp, rng: &mut R) -> Vec3f {
+        let U1 = rng.gen_range(0.0..1.0);
+        let U2 = rng.gen_range(0.0..1.0);
+        // Section 3.2: transforming the view direction to the hemisphere configuration
+        let Vh = (Vec3f::new(alpha * Ve.x, alpha * Ve.y, Ve.z)).normalize();
+        // Section 4.1: orthonormal basis (with special case if cross product is zero)
+        let lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+        let T1 = if lensq > 0.0 {
+            Vec3f::new(-Vh.y, Vh.x, 0.0) * lensq.inv().sqrt()
+        } else {
+            Vec3f::new(1.0, 0.0, 0.0)
+        };
+        let T2 = Vh.cross(&T1);
+        // Section 4.2: parameterization of the projected area
+        let r = Fp::sqrt(U1);
+        let phi = 2.0 * FP_PI * U2;
+        let t1 = r * Fp::cos(phi);
+        let t2 = r * Fp::sin(phi);
+        let s = 0.5 * (1.0 + Vh.z);
+        let t2 = (1.0 - s) * Fp::sqrt(1.0 - t1 * t1) + s * t2;
+        // Section 4.3: reprojection onto hemisphere
+        let Nh = t1 * T1 + t2 * T2 + Fp::sqrt(Fp::max(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh;
+        // Section 3.4: transforming the normal back to the ellipsoid configuration
+        let Ne = (Vec3f::new(alpha * Nh.x, alpha * Nh.y, Fp::max(0.0, Nh.z))).normalize();
+        Ne
     }
 }

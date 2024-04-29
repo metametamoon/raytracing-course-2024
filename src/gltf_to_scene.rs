@@ -1,13 +1,13 @@
 use gltf::buffer::Data;
 use gltf::camera::Projection::Perspective;
-use gltf::mesh::util::ReadIndices;
 use gltf::Document;
+use gltf::mesh::util::ReadIndices;
 use na::{Matrix4, Matrix4x1, Quaternion, UnitQuaternion};
 
 use crate::aabb::calculate_aabb_for_object;
 use crate::bvh::create_bvh_tree;
-use crate::geometry::{Fp, Object3D, Shape3D, Vec3f, Vec4f, EPS};
-use crate::scene::{Material, MaterialEnumerated, Primitive, Scene};
+use crate::geometry::{EPS, Fp, Object3D, Shape3D, Vec3f, Vec4f};
+use crate::scene::{Material, Primitive, Scene};
 
 #[derive(Debug)]
 struct Camera {
@@ -147,7 +147,7 @@ fn read_primitives<'a>(
         println!("Mesh #{}", mesh.index());
         let primitive = mesh.primitives().next().unwrap();
         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-        let gltfMaterial = primitive.material();
+        let gltf_material = primitive.material();
         let Some(indices) = reader.read_indices() else {
             todo!()
         };
@@ -209,16 +209,17 @@ fn read_primitives<'a>(
                 position: Vec3f::new(0.0, 0.0, 0.0),
                 rotation: Default::default(),
             };
-            let roughness = gltfMaterial.pbr_metallic_roughness();
-            // dbg!(gltfMaterial.name());
+            let roughness = gltf_material.pbr_metallic_roughness();
+            // dbg!(gltf_material.name());
             let material = Material {
                 base_color_factor: slice4_to_vec3f(&roughness.base_color_factor()),  // aka color
-                metallic_factor: roughness.metallic_factor() as Fp,
-                metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.3) as Fp,
+                metallic_factor: 0.0 as Fp,
+                // metallic_factor: roughness.metallic_factor() as Fp,
+                metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.5) as Fp,
             };
             let emission = {
-                let emission = gltfMaterial.emissive_factor();
-                let emission_strength = gltfMaterial.emissive_strength().unwrap_or(1.0) as Fp;
+                let emission = gltf_material.emissive_factor();
+                let emission_strength = gltf_material.emissive_strength().unwrap_or(1.0) as Fp;
                 Vec3f::new(
                     emission[0] as Fp * emission_strength,
                     emission[1] as Fp * emission_strength,

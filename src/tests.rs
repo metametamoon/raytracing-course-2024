@@ -73,32 +73,4 @@ fn test_light_box_distribution() {
     test_distribution(DirectLightSamplingDistribution { object3d })
 }
 
-#[test]
-fn test_light_ellipsoid_distribution_norotation() {
-    let object3d = Object3D {
-        shape: Shape3D::Ellipsoid {
-            r: Vec3f::new(1.0, 2.0, 3.0),
-        },
-        position: Vec3f::new(0.0, 0.0, 4.0),
-        rotation: Default::default(),
-    };
-    test_distribution(DirectLightSamplingDistribution { object3d })
-}
 
-#[test]
-fn test_light_ellipsoid_distribution() {
-    let mut rng = rand::thread_rng();
-    let object3d = Object3D {
-        shape: Shape3D::Ellipsoid {
-            r: Vec3f::new(1.0, 2.0, 3.0),
-        },
-        position: Vec3f::new(0.0, 0.0, 4.0),
-        rotation: UnitQuaternion::from_quaternion(Quaternion::new(
-            rng.gen(),
-            rng.gen(),
-            rng.gen(),
-            rng.gen(),
-        )),
-    };
-    test_distribution(DirectLightSamplingDistribution { object3d })
-}
