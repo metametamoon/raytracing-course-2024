@@ -97,7 +97,7 @@ fn get_ray_color<RandGenType: RngCore>(
         Some((primitive, intersection)) => {
             let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
             let mut total_color = primitive.emission;
-            let n = intersection.normal_shading;
+            let n = intersection.normal_geometry;
             let v = -ray.direction.normalize();
             let (l, pdf) = loop {
                 let l = distribution
