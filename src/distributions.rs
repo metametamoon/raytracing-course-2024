@@ -1,17 +1,15 @@
-use na::Unit;
+use na::{Matrix3, Unit};
 use rand::Rng;
-use rand_distr::num_traits::Inv;
 use rand_distr::{Distribution, Normal};
+use rand_distr::num_traits::Inv;
 
-use crate::bvh::{intersect_with_bvh_all_points, BvhTree};
-use crate::geometry::{
-    intersect_ray_with_object3d_all_points, Fp, Object3D, Ray, Shape3D, Vec3f, FP_PI,
-};
+use crate::bvh::{BvhTree, intersect_with_bvh_all_points};
+use crate::geometry::{Fp, FP_PI, intersect_ray_with_object3d_all_points, Object3D, Ray, reflect_vec, Shape3D, Vec3f};
 use crate::scene::Material;
-use crate::utils::{chi_plus, safe_sqrt};
+use crate::utils::{almost_equal_floats, almost_equal_vecs};
 
 pub trait SampleDistribution<R: Rng> {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f>;
+    fn sample_unit_vector(&self, point: &Vec3f, n: &Vec3f, rng: &mut R, v: &Vec3f, material: &Material) -> Unit<Vec3f>;
     fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp;
 }
 
@@ -32,7 +30,7 @@ pub struct MixDistribution<R: Rng> {
 }
 
 impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
-    fn sample_unit_vector(&self, _: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
+    fn sample_unit_vector(&self, _point: &Vec3f, n: &Vec3f, rng: &mut R, _v: &Vec3f, _material: &Material) -> Unit<Vec3f> {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let result = Vec3f::new(
             normal_distr.sample(rng),
@@ -40,20 +38,20 @@ impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
             normal_distr.sample(rng),
         )
         .normalize();
-        if result.dot(normal) > 0.0 {
+        if result.dot(n) > 0.0 {
             Unit::<Vec3f>::new_normalize(result)
         } else {
             Unit::<Vec3f>::new_normalize(-result)
         }
     }
 
-    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+    fn pdf(&self, _point: &Vec3f, _n: &Vec3f, _l: &Vec3f, _v: &Vec3f, _material: &Material) -> Fp {
         1.0 / (2.0 * FP_PI)
     }
 }
 
 impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
-    fn sample_unit_vector(&self, _point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
+    fn sample_unit_vector(&self, _point: &Vec3f, n: &Vec3f, rng: &mut R, _v: &Vec3f, _material: &Material) -> Unit<Vec3f> {
         let normal_distr = Normal::new(0.0, 1.0).unwrap();
         let uniform = Vec3f::new(
             normal_distr.sample(rng),
@@ -61,10 +59,10 @@ impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
             normal_distr.sample(rng),
         )
         .normalize();
-        Unit::<Vec3f>::new_normalize(uniform + normal)
+        Unit::<Vec3f>::new_normalize(uniform + n)
     }
 
-    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+    fn pdf(&self, _point: &Vec3f, n: &Vec3f, l: &Vec3f, _v: &Vec3f, _material: &Material) -> Fp {
         Fp::max(0.0, l.normalize().dot(n)) / FP_PI
     }
 }
@@ -83,7 +81,7 @@ fn get_local_pdf(shape: &Shape3D) -> Fp {
 }
 
 impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
-    fn sample_unit_vector(&self, point: &Vec3f, _normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
+    fn sample_unit_vector(&self, point: &Vec3f, _n: &Vec3f, rng: &mut R, _v: &Vec3f, _material: &Material) -> Unit<Vec3f> {
         let local_coords_point = match self.object3d.shape {
             Shape3D::Box { s } => {
                 let (wx, wy, wz) = (4.0 * s.y * s.z, 4.0 * s.x * s.z, 4.0 * s.x * s.y);
@@ -126,7 +124,7 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
         Unit::<Vec3f>::new_normalize(global_coords_point - point)
     }
 
-    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+    fn pdf(&self, point: &Vec3f, _n: &Vec3f, l: &Vec3f, _v: &Vec3f, _material: &Material) -> Fp {
         let ray = Ray {
             origin: *point,
             direction: *l,
@@ -150,16 +148,16 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
 }
 
 impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
-        let n = self.bvh_tree.primitives.len();
-        let rand_idx = rng.gen_range(0..n);
+    fn sample_unit_vector(&self, point: &Vec3f, n: &Vec3f, rng: &mut R, v: &Vec3f, material: &Material) -> Unit<Vec3f> {
+        let len = self.bvh_tree.primitives.len();
+        let rand_idx = rng.gen_range(0..len);
         DirectLightSamplingDistribution {
             object3d: self.bvh_tree.primitives[rand_idx].object3d.clone(),
         }
-        .sample_unit_vector(point, normal, rng)
+        .sample_unit_vector(point, n, rng, v, material)
     }
 
-    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+    fn pdf(&self, point: &Vec3f, _n: &Vec3f, l: &Vec3f, _v: &Vec3f, _material: &Material) -> Fp {
         let ray = Ray {
             origin: *point,
             direction: *l,
@@ -187,10 +185,10 @@ impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
 }
 
 impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
-    fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f> {
-        let n = self.distributions.len();
-        let rand_idx = rng.gen_range(0..n);
-        self.distributions[rand_idx].sample_unit_vector(point, normal, rng)
+    fn sample_unit_vector(&self, point: &Vec3f, n: &Vec3f, rng: &mut R, v: &Vec3f, material: &Material) -> Unit<Vec3f> {
+        let len = self.distributions.len();
+        let rand_idx = rng.gen_range(0..len);
+        self.distributions[rand_idx].sample_unit_vector(point, n, rng, v, material)
     }
 
     fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
@@ -203,46 +201,16 @@ impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
     }
 }
 
-struct VndfDistribution {}
+pub struct VndfDistribution;
 
 impl VndfDistribution {
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f, material: &Material) -> Fp {
-        let alpha: Fp = material.metallic_roughness.powi(2); // roughness^2
-        let h = normal;
-        let n = normal;
-        let l = direction;
-        let v = todo!();
-        let d = {
-            let hn = h.dot(n);
-            let numerator = alpha.powi(2) * chi_plus(hn);
-            let denominator = FP_PI * ((alpha.powi(2) - 1.0) * hn * hn + 1.0).powi(2);
-            numerator / denominator
-        };
-        let g1 = |x: &Vec3f| {
-            let nx = n.dot(x);
-            let a = {
-                let numerator = nx * chi_plus(nx);
-                let denominator = alpha * safe_sqrt(1.0 - nx.powi(2));
-                numerator / denominator
-            };
-            let under_sqrt = 1.0 + 1.0 / (a * a);
-            let lambda = 0.5 * (under_sqrt.sqrt() - 1.0);
-            1.0 / (1.0 + lambda)
-        };
-
-        // let g = {
-        //     g1(n, l) * g1(n, v)
-        // };
-        // Dv(N) / (4 * (V dot N))
-        // Dv(N) = G1(V) * max(0, V * N) * D(N) / * (V * Z)
-        0.0
-    }
-
-    fn sample_ggx_vndf<R: Rng>(Ve: Vec3f, alpha: Fp, rng: &mut R) -> Vec3f {
+    
+    #![allow(warnings)]
+    fn sample_ggx_vndf<R: Rng>(v_local: Vec3f, alpha: Fp, rng: &mut R) -> Vec3f {
         let U1 = rng.gen_range(0.0..1.0);
         let U2 = rng.gen_range(0.0..1.0);
         // Section 3.2: transforming the view direction to the hemisphere configuration
-        let Vh = (Vec3f::new(alpha * Ve.x, alpha * Ve.y, Ve.z)).normalize();
+        let Vh = Vec3f::new(alpha * v_local.x, alpha * v_local.y, v_local.z).normalize();
         // Section 4.1: orthonormal basis (with special case if cross product is zero)
         let lensq = Vh.x * Vh.x + Vh.y * Vh.y;
         let T1 = if lensq > 0.0 {
@@ -263,5 +231,68 @@ impl VndfDistribution {
         // Section 3.4: transforming the normal back to the ellipsoid configuration
         let Ne = (Vec3f::new(alpha * Nh.x, alpha * Nh.y, Fp::max(0.0, Nh.z))).normalize();
         Ne
+    }
+
+    fn g1(v: &Vec3f, alpha: Fp) -> Fp {
+        let x = v.x;
+        let y = v.y;
+        let z = v.z;
+        let under_sqrt = 1.0 + alpha.powi(2) * (x.powi(2) + y.powi(2)) / z.powi(2);
+        let lambda = (-1.0 + under_sqrt.sqrt()) / 2.0;
+        1.0 / (1.0 + lambda)
+    }
+
+    fn dn(n: &Vec3f, alpha: Fp) -> Fp {
+        let x = n.x;
+        let y = n.y;
+        let z = n.z;
+        let alpha2 = alpha.powi(2);
+        let denominator =  FP_PI * alpha2 * (x * x / alpha2 + y * y / alpha2 + z * z).powi(2);
+        1.0 / denominator
+    }
+
+    /// all in locals
+    fn dv(n: &Vec3f, v: &Vec3f, alpha: Fp) -> Fp {
+        let z = Vec3f::z();
+        let numerator = Self::g1(v, alpha) * Fp::max(0.0, v.dot(n)) * Self::dn(n, alpha);
+        let denominator = v.dot(&z);
+        numerator / denominator
+    }
+}
+
+impl<R: Rng> SampleDistribution<R> for VndfDistribution {
+    fn sample_unit_vector(&self, _point: &Vec3f, n: &Vec3f, rng: &mut R, v: &Vec3f, material: &Material) -> Unit<Vec3f> {
+        let t1 = n.cross(&Vec3f::new(0.234, 0.1234, 0.97686).normalize()).normalize();
+        let t2 = n.cross(&t1).normalize();
+        let m = Matrix3::from_columns(&[t1, t2, *n]);
+        let m_inv = m.transpose();
+        let local_norm = Self::sample_ggx_vndf(m_inv * v, material.metallic_roughness.powi(2), rng);
+        let global_norm = m * local_norm;
+        let result = reflect_vec(&v, &global_norm);
+        assert!(almost_equal_vecs(&global_norm, &(result + v).normalize()));
+        Unit::<Vec3f>::new_normalize(result)
+    }
+
+    fn pdf(&self, _point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+        let t1 = n.cross(&Vec3f::new(0.234, 0.1234, 0.97686).normalize()).normalize();
+        let t2 = n.cross(&t1).normalize();
+        let m = Matrix3::from_columns(&[t1, t2, *n]);
+        let m_inv = m.transpose();
+        let result = { // locals
+            let v = m_inv * v;
+            assert!(almost_equal_floats(v.norm(), 1.0));
+            let l = m_inv * l;
+            assert!(almost_equal_floats(l.norm(), 1.0));
+
+            let z = m_inv * n;
+            assert!(almost_equal_vecs(&z, &Vec3f::z()));
+
+            let n_i = (l + v).normalize();
+            let alpha = material.metallic_roughness.powi(2);
+            let numerator = Self::dv(&n_i, &v, alpha);
+            let denominator = 4.0 * (v.dot(&n_i));
+            numerator / denominator
+        };
+        result
     }
 }

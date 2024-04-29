@@ -62,6 +62,12 @@ pub fn _get_reflection_ray(ray: &Vec3f, normal: &Vec3f) -> Vec3f {
     ray + normal * projection * 2.0
 }
 
+pub fn reflect_vec(v: &Vec3f, n: &Vec3f) -> Vec3f {
+    let projection = v.dot(&n);
+    -v + 2.0 * projection * n
+    // ray + normal * projection * 2.0
+}
+
 fn sort2(x: Fp, y: Fp) -> (Fp, Fp) {
     if x < y {
         (x, y)

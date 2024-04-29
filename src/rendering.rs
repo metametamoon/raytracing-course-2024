@@ -6,7 +6,7 @@ use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 
 use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
-use crate::distributions::MixDistribution;
+use crate::distributions::{MixDistribution, VndfDistribution};
 use crate::distributions::SampleDistribution;
 use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
 use crate::geometry::Fp;
@@ -21,7 +21,7 @@ use crate::utils::{chi_plus, safe_sqrt};
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     validate_bvh(&scene.bvh_finite_primitives);
     let mut distributions: Vec<Box<dyn SampleDistribution<_> + Sync>> =
-        vec![Box::new(CosineWeightedDistribution)];
+        vec![Box::new(CosineWeightedDistribution), Box::new(VndfDistribution)];
     if !scene.bvh_light_sources.primitives.is_empty() {
         distributions.push(Box::new(MultipleLightSamplingDistribution {
             bvh_tree: scene.bvh_light_sources.clone(),
@@ -96,10 +96,10 @@ fn get_ray_color<RandGenType: RngCore>(
             let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
             let mut total_color = primitive.emission;
             let n = intersection.normal_shading;
-            let l = distribution
-                .sample_unit_vector(&corrected_point, &n, rng)
-                .into_inner();
             let v = -ray.direction.normalize();
+            let l = distribution
+                .sample_unit_vector(&corrected_point, &n, rng, &v, &primitive.material)
+                .into_inner();
             let pdf = distribution.pdf(
                 &corrected_point,
                 &n,
