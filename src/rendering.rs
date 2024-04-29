@@ -6,9 +6,9 @@ use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 
 use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
-use crate::distributions::{MixDistribution, VndfDistribution};
 use crate::distributions::SampleDistribution;
 use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
+use crate::distributions::{MixDistribution, VndfDistribution};
 use crate::geometry::Fp;
 use crate::geometry::Ray;
 use crate::geometry::Vec3f;
@@ -20,8 +20,10 @@ use crate::utils::{chi_plus, safe_sqrt};
 
 pub fn render_scene(scene: &Scene) -> Vec<u8> {
     validate_bvh(&scene.bvh_finite_primitives);
-    let mut distributions: Vec<Box<dyn SampleDistribution<_> + Sync>> =
-        vec![Box::new(CosineWeightedDistribution), Box::new(VndfDistribution)];
+    let mut distributions: Vec<Box<dyn SampleDistribution<_> + Sync>> = vec![
+        Box::new(CosineWeightedDistribution),
+        Box::new(VndfDistribution),
+    ];
     if !scene.bvh_light_sources.primitives.is_empty() {
         distributions.push(Box::new(MultipleLightSamplingDistribution {
             bvh_tree: scene.bvh_light_sources.clone(),
@@ -97,37 +99,27 @@ fn get_ray_color<RandGenType: RngCore>(
             let mut total_color = primitive.emission;
             let n = intersection.normal_shading;
             let v = -ray.direction.normalize();
-            let l = distribution
-                .sample_unit_vector(&corrected_point, &n, rng, &v, &primitive.material)
-                .into_inner();
-            let pdf = distribution.pdf(
-                &corrected_point,
-                &n,
-                &l,
-                &v,
-                &primitive.material,
+            let (l, pdf) = loop {
+                let l = distribution
+                    .sample_unit_vector(&corrected_point, &n, rng, &v, &primitive.material)
+                    .into_inner();
+                let pdf = distribution.pdf(&corrected_point, &n, &l, &v, &primitive.material);
+                if pdf > 0.0 && l.dot(&intersection.normal_shading) > 0.0 {
+                    break (l, pdf);
+                }
+            };
+            let color_refl = get_ray_color(
+                &Ray {
+                    origin: corrected_point,
+                    direction: l,
+                },
+                scene,
+                recursion_depth - 1,
+                distribution,
+                rng,
             );
-            if pdf > 0.0 && l.dot(&intersection.normal_geometry) > 0.0 {
-                let color_refl = get_ray_color(
-                    &Ray {
-                        origin: corrected_point,
-                        direction: l,
-                    },
-                    scene,
-                    recursion_depth - 1,
-                    distribution,
-                    rng,
-                );
-                let brdf = brdf(
-                    &l,
-                    &n,
-                    &v,
-                    &primitive.material,
-                );
-                total_color += color_refl.component_mul(&brdf)
-                    * l.dot(&n)
-                    * (1.0 / pdf);
-            }
+            let brdf = brdf(&l, &n, &v, &primitive.material);
+            total_color += color_refl.component_mul(&brdf) * l.dot(&n) * (1.0 / pdf);
             total_color
         }
         None => scene.bg_color,
@@ -150,7 +142,7 @@ fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
             &material.base_color_factor,
             &Vec3f::from_element(1.0),
             &h,
-            v,
+            l,
         );
     let dielectric_brdf = {
         let f = fresnel_term(&Vec3f::from_element(0.04), &Vec3f::from_element(1.0), &h, l);

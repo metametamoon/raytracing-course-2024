@@ -185,6 +185,9 @@ fn read_primitives<'a>(
             let (a_norm, b_norm, c_norm) = match maybe_normals {
                 Some(ref normals) => {
                     // println!("Some normals!");
+                    dbg!(normals.len());
+                    dbg!(positions.len());
+                    dbg!(indices.len());
                     (
                         current_rotation.transform_vector(&slice3_to_vec3f(&normals[triangle[0]])),
                         current_rotation.transform_vector(&slice3_to_vec3f(&normals[triangle[1]])),
@@ -215,7 +218,7 @@ fn read_primitives<'a>(
                 base_color_factor: slice4_to_vec3f(&roughness.base_color_factor()),  // aka color
                 // metallic_factor: 1.0 as Fp,
                 metallic_factor: roughness.metallic_factor() as Fp,
-                metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.05) as Fp,
+                metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.03) as Fp,
             };
             let emission = {
                 let emission = gltf_material.emissive_factor();

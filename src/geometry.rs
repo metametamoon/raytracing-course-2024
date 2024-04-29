@@ -114,7 +114,7 @@ fn intersect_with_triangle(
                 let outer_normal = (b - a).cross(&(c - a)).normalize();
                 let normal_shading =
                     (a_norm + (b_norm - a_norm) * u + (c_norm - a_norm) * v).normalize();
-                let normal_shading = if normal_shading.dot(&ray.direction) < 0.0 {
+                let normal_shading = if outer_normal.dot(&ray.direction) < 0.0 {
                     normal_shading
                 } else {
                     -normal_shading
@@ -127,7 +127,7 @@ fn intersect_with_triangle(
                 result.push(Intersection {
                     offset: t,
                     normal_geometry,
-                    normal_shading,
+                    normal_shading: normal_shading,                    // normal_shading,
                     is_outer_to_inner,
                 })
             }
