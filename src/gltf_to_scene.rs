@@ -213,8 +213,8 @@ fn read_primitives<'a>(
             // dbg!(gltf_material.name());
             let material = Material {
                 base_color_factor: slice4_to_vec3f(&roughness.base_color_factor()),  // aka color
-                metallic_factor: 0.0 as Fp,
-                // metallic_factor: roughness.metallic_factor() as Fp,
+                // metallic_factor: 1.0 as Fp,
+                metallic_factor: roughness.metallic_factor() as Fp,
                 metallic_roughness: Fp::max(roughness.roughness_factor() as Fp, 0.5) as Fp,
             };
             let emission = {
