@@ -121,7 +121,7 @@ fn get_ray_color<RandGenType: RngCore>(
                 let brdf = brdf(
                     &rnd_vec,
                     &intersection.normal_shading,
-                    &-ray.direction,
+                    &-ray.direction.normalize(),
                     &primitive.material,
                 );
                 total_color += color_refl.component_mul(&brdf)
@@ -135,10 +135,12 @@ fn get_ray_color<RandGenType: RngCore>(
 }
 
 fn fresnel_term(f0: &Vec3f, f90: &Vec3f, h: &Vec3f, l: &Vec3f) -> Vec3f {
-    f0 + (f90 - f0) * (1.0 - h.dot(l)).powi(5)
+    f0 + (f90 - f0) * (1.0 - h.dot(l).abs()).powi(5)
 }
 
 fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
+    assert!(l.dot(n) >= 0.0);
+    assert!(v.dot(n) >= 0.0);
     let h = (l + v).normalize();
     let diffuse_brdf = material.base_color_factor / FP_PI;
     let specular_brdf = specular_brdf(l, n, v, &h, material);
@@ -148,7 +150,7 @@ fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
             &material.base_color_factor,
             &Vec3f::from_element(1.0),
             &h,
-            l,
+            v,
         );
     let dielectric_brdf = {
         let f = fresnel_term(&Vec3f::from_element(0.04), &Vec3f::from_element(1.0), &h, l);
@@ -156,11 +158,15 @@ fn brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, material: &Material) -> Vec3f {
     };
     // metal_brdf
     metal_brdf * material.metallic_factor + dielectric_brdf * (1.0 - material.metallic_factor)
+    // dielectric_brdf
     // Vec3f::from_element(specular_brdf)
 }
 
 fn specular_brdf(l: &Vec3f, n: &Vec3f, v: &Vec3f, h: &Vec3f, material: &Material) -> Fp {
     let alpha: Fp = material.metallic_roughness.powi(2); // roughness^2
+    assert!((n.norm() - 1.0).abs() < EPS);
+    assert!((v.norm() - 1.0).abs() < EPS);
+    assert!((h.norm() - 1.0).abs() < EPS);
     let d: Fp = {
         let hn = h.dot(n);
         let numerator = alpha.powi(2) * chi_plus(hn);

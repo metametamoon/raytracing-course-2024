@@ -6,7 +6,7 @@ pub fn safe_sqrt(x: Fp) -> Fp {
 
 pub fn chi_plus(x: Fp) -> Fp {
     if x > 0.0 {
-        x
+        1.0
     } else {
         0.0
     }
