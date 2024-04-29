@@ -12,7 +12,7 @@ use crate::utils::{chi_plus, safe_sqrt};
 
 pub trait SampleDistribution<R: Rng> {
     fn sample_unit_vector(&self, point: &Vec3f, normal: &Vec3f, rng: &mut R) -> Unit<Vec3f>;
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp;
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp;
 }
 
 pub struct SemisphereUniform;
@@ -47,7 +47,7 @@ impl<R: Rng> SampleDistribution<R> for SemisphereUniform {
         }
     }
 
-    fn pdf(&self, _point: &Vec3f, _normal: &Vec3f, _direction: &Vec3f) -> Fp {
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
         1.0 / (2.0 * FP_PI)
     }
 }
@@ -64,8 +64,8 @@ impl<R: Rng> SampleDistribution<R> for CosineWeightedDistribution {
         Unit::<Vec3f>::new_normalize(uniform + normal)
     }
 
-    fn pdf(&self, _: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp {
-        Fp::max(0.0, direction.normalize().dot(normal)) / FP_PI
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
+        Fp::max(0.0, l.normalize().dot(n)) / FP_PI
     }
 }
 
@@ -126,10 +126,10 @@ impl<R: Rng> SampleDistribution<R> for DirectLightSamplingDistribution {
         Unit::<Vec3f>::new_normalize(global_coords_point - point)
     }
 
-    fn pdf(&self, point: &Vec3f, _: &Vec3f, direction: &Vec3f) -> Fp {
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
         let ray = Ray {
             origin: *point,
-            direction: *direction,
+            direction: *l,
         };
         let (all_intersections, _rotated_ray) =
             intersect_ray_with_object3d_all_points(&ray, &self.object3d);
@@ -159,10 +159,10 @@ impl<R: Rng> SampleDistribution<R> for MultipleLightSamplingDistribution {
         .sample_unit_vector(point, normal, rng)
     }
 
-    fn pdf(&self, point: &Vec3f, _normal: &Vec3f, direction: &Vec3f) -> Fp {
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
         let ray = Ray {
             origin: *point,
-            direction: *direction,
+            direction: *l,
         };
         let bvh_intersections = intersect_with_bvh_all_points(&ray, &self.bvh_tree);
         let pdf = bvh_intersections
@@ -193,11 +193,11 @@ impl<R: Rng> SampleDistribution<R> for MixDistribution<R> {
         self.distributions[rand_idx].sample_unit_vector(point, normal, rng)
     }
 
-    fn pdf(&self, point: &Vec3f, normal: &Vec3f, direction: &Vec3f) -> Fp {
+    fn pdf(&self, point: &Vec3f, n: &Vec3f, l: &Vec3f, v: &Vec3f, material: &Material) -> Fp {
         let ans = self
             .distributions
             .iter()
-            .map(|distr| distr.pdf(point, normal, direction))
+            .map(|distr| distr.pdf(point, n, l, v, material))
             .sum::<Fp>();
         ans / (self.distributions.len() as Fp)
     }

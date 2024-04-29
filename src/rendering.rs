@@ -6,15 +6,15 @@ use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 
 use crate::bvh::{interesect_with_bvh_nearest_point, validate_bvh};
-use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
 use crate::distributions::MixDistribution;
 use crate::distributions::SampleDistribution;
-use crate::geometry::{Fp};
-use crate::geometry::{intersect_ray_with_object3d, Intersection};
-use crate::geometry::EPS;
-use crate::geometry::FP_PI;
+use crate::distributions::{CosineWeightedDistribution, MultipleLightSamplingDistribution};
+use crate::geometry::Fp;
 use crate::geometry::Ray;
 use crate::geometry::Vec3f;
+use crate::geometry::EPS;
+use crate::geometry::FP_PI;
+use crate::geometry::{intersect_ray_with_object3d, Intersection};
 use crate::scene::{Material, Primitive, Scene};
 use crate::utils::{chi_plus, safe_sqrt};
 
@@ -49,7 +49,6 @@ pub fn render_scene(scene: &Scene) -> Vec<u8> {
                 Xoshiro256StarStar::seed_from_u64((scene.width * y) as u64);
             (0..scene.width).flat_map(move |x| {
                 let color = {
-                    
                     let total_color = (0..scene.samples)
                         .map(|_: i32| {
                             let ray_to_pixel = get_ray_to_pixel(x, *y, scene, &mut rng);
@@ -78,13 +77,9 @@ fn get_ray_to_pixel<R: Rng>(x: i32, y: i32, scene: &Scene, rng: &mut R) -> Ray {
     let direction = px * scene.camera_right + py * scene.camera_up + pz * scene.camera_forward;
     Ray {
         origin: scene.camera_position,
-        direction,
+        direction: direction.normalize(),
     }
 }
-
-
-
-
 
 fn get_ray_color<RandGenType: RngCore>(
     ray: &Ray,
@@ -100,32 +95,37 @@ fn get_ray_color<RandGenType: RngCore>(
         Some((primitive, intersection)) => {
             let corrected_point = ray.origin + ray.direction * (intersection.offset - EPS);
             let mut total_color = primitive.emission;
-            let rnd_vec = distribution
-                .sample_unit_vector(&corrected_point, &intersection.normal_shading, rng)
+            let n = intersection.normal_shading;
+            let l = distribution
+                .sample_unit_vector(&corrected_point, &n, rng)
                 .into_inner();
-            let pdf = distribution.pdf(&corrected_point, &intersection.normal_shading, &rnd_vec);
-            if pdf > 0.0 && rnd_vec.dot(&intersection.normal_geometry) > 0.0 {
+            let v = -ray.direction.normalize();
+            let pdf = distribution.pdf(
+                &corrected_point,
+                &n,
+                &l,
+                &v,
+                &primitive.material,
+            );
+            if pdf > 0.0 && l.dot(&intersection.normal_geometry) > 0.0 {
                 let color_refl = get_ray_color(
                     &Ray {
                         origin: corrected_point,
-                        direction: rnd_vec,
+                        direction: l,
                     },
                     scene,
                     recursion_depth - 1,
                     distribution,
                     rng,
                 );
-                // if recursion_depth == 6 {
-                //     println!("Dbg");
-                // }
                 let brdf = brdf(
-                    &rnd_vec,
-                    &intersection.normal_shading,
-                    &-ray.direction.normalize(),
+                    &l,
+                    &n,
+                    &v,
                     &primitive.material,
                 );
                 total_color += color_refl.component_mul(&brdf)
-                    * rnd_vec.dot(&intersection.normal_shading)
+                    * l.dot(&n)
                     * (1.0 / pdf);
             }
             total_color
